@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        WITH_ML: "1"          # 0 — без нейросети (быстрая сборка, DETECTOR=mock)
+        PRELOAD_MODEL: "1"
+    environment:
+      DETECTOR: ${DETECTOR:-ultralytics}
+      MODEL_WEIGHTS: ${MODEL_WEIGHTS:-yolov8s-worldv2.pt}
+      SECRET_KEY: ${SECRET_KEY:-}   # пусто — ключ генерируется и хранится в /data
+      DATA_DIR: /data
+    volumes:
+      - stroy-data:/data
+      - ./models:/app/models      # дообученные веса: MODEL_WEIGHTS=models/construction.pt
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  stroy-data:

@@ -1,0 +1,4 @@
+# Детекция техники. torch ставится отдельно (CPU-сборка), см. Dockerfile.
+ultralytics>=8.3.0
+clip @ git+https://github.com/ultralytics/CLIP.git   # текстовый энкодер для YOLO-World
+onnxruntime>=1.17                                      # альтернативный лёгкий бэкенд

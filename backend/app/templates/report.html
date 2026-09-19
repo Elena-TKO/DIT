@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Отчёт — {{ project.name }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant:wght@400;500;600&family=Onest:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#15191C; --muted:#5E656A; --faint:#8C9296; --line:#E6E4DF; --paper:#FFFFFF; --plaster:#EDEDEA; --night:#0D1215; --accent:#A8894F; --serif:"Cormorant", Georgia, serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14.5px/1.55 "Onest", "Segoe UI", Roboto, Arial, sans-serif; color: var(--ink); background: var(--plaster); font-variant-numeric: tabular-nums; }
+  main { max-width: 1000px; margin: 32px auto; background: var(--paper); border-radius: 20px; overflow: hidden; }
+  header { background: var(--night); color: #ECEBE6; padding: 48px 56px 44px; }
+  header .mark { font-family: var(--serif); font-size: 20px; color: #CDB78F; margin-bottom: 34px; }
+  header .muted { color: rgba(236,235,230,.66); }
+  .content { padding: 8px 56px 56px; }
+  h1 { font-family: var(--serif); font-size: 56px; margin: 0 0 14px; line-height: 1; font-weight: 500; font-variant-numeric: lining-nums; }
+  h2 { font-family: var(--serif); font-size: 36px; margin: 52px 0 10px; font-weight: 500; line-height: 1.1; padding-top: 28px; border-top: 1px solid var(--line); }
+  h3 { font-size: 15px; margin: 28px 0 10px; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .content h2:first-of-type { border-top: 0; padding-top: 0; margin-top: 44px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); margin: 22px 0 8px; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .kpi { padding: 0 18px; border-left: 1px solid var(--line); }
+  .kpi:first-child { padding-left: 0; border-left: 0; }
+  .kpi b { display: block; font-family: var(--serif); font-size: 40px; font-weight: 400; line-height: 1.1; font-variant-numeric: lining-nums; }
+  .kpi span { font-size: 12.5px; }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; font-size: 13px; margin-right: 6px; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .status.unknown { color: var(--faint); }
+  .status.ok { color: #2F7D59; } .status.warning { color: #B06A12; } .status.critical { color: #B3372C; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 500; color: var(--faint); font-size: 12.5px; }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 7px; }
+  .dev { display: grid; grid-template-columns: 10px 1fr; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); page-break-inside: avoid; }
+  .dev::before { content: ""; width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; background: #8D959B; }
+  .dev.critical::before { background: #B3372C; } .dev.warning::before { background: #D98A2B; } .dev.info::before { background: #3A6690; }
+  .dev img { height: 104px; border-radius: 8px; margin: 10px 8px 0 0; }
+  .gantt { position: relative; height: 10px; background: #F0F2F3; border-radius: 5px; }
+  .gantt span { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+  ol { padding-left: 20px; } ol li { margin-bottom: 8px; }
+  @media print { body { background: #fff; } main { margin: 0; border-radius: 0; } header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body><main>
+<header>
+  <div class="mark">СтройКонтроль</div>
+  <h1>{{ project.name }}</h1>
+  <div class="muted">{{ project.address or "Адрес не указан" }}; строительство {{ project.start_date|ru_date }} — {{ project.end_date|ru_date }}.</div>
+  <div class="muted">Отчёт сформирован {{ generated_at|ru_datetime }}; детектор {{ detector.backend }}{% if detector.weights %} ({{ detector.weights }}){% endif %}.</div>
+</header>
+<div class="content">
+{% if not buildings %}<p>На стройке пока нет объектов.</p>{% endif %}
+
+{% for b in buildings %}
+{% set tl = b.timeline %}{% set v = b.verdict %}
+<h2>{{ b.building.name }} <span class="muted" style="font-weight:400">— {{ b.building.object_type_title }}</span></h2>
+<p><span class="status {{ v.status }}">{{ {"ok":"В норме","warning":"Есть отклонения","critical":"Критично"}.get(v.status, "Нет данных") }}</span>
+  на {{ b.at|ru_datetime }}. {{ v.summary }}</p>
+
+<div class="kpis">
+  <div class="kpi"><b>{% if tl.completion_percent is none %}—{% else %}{{ tl.completion_percent }}%{% endif %}</b><span class="muted">готовность по факту</span></div>
+  <div class="kpi"><b>{{ tl.planned_percent }}%</b><span class="muted">по графику</span></div>
+  <div class="kpi"><b>{{ tl.max_delay_days }} дн.</b><span class="muted">макс. отставание</span></div>
+  <div class="kpi"><b>{{ tl.forecast_end|ru_date }}</b><span class="muted">прогноз окончания (план {{ b.building.end_date|ru_date }})</span></div>
+</div>
+
+{% set econ = b.economics %}
+{% if econ.idle_total %}
+<h3>Наблюдаемый простой техники</h3>
+<table>
+  <tr><th>Техника</th><th>Простой</th><th>Ориентир потерь, {{ econ.currency }}</th></tr>
+  {% for e in econ.by_equipment %}
+  <tr><td>{{ e.label }}</td><td>{{ e.minutes }} мин</td><td>{{ "{:,}".format(e.cost).replace(",", " ") }}</td></tr>
+  {% endfor %}
+  <tr><td><b>Итого за окно анализа</b></td><td>{{ (econ.idle_minutes / 60)|round(1) }} ч</td>
+      <td><b>{{ "{:,}".format(econ.idle_total).replace(",", " ") }}</b></td></tr>
+</table>
+<p class="muted">{{ econ.note }} Дни отставания в рубли не переводятся: техника в это время не простаивает под счётчик.
+{% if econ.delay_days %}Отставание {{ econ.delay_days }} дн.; день работы замеченной техники обходится примерно в
+{{ "{:,}".format(econ.daily_fleet_cost).replace(",", " ") }} {{ econ.currency }}.{% endif %}</p>
+{% endif %}
+
+<h3>Фактический этап</h3>
+<p>{{ v.stage.explanation }}</p>
+
+<h3>Этапы и статусы</h3>
+<table>
+  <tr><th>Этап</th><th>План</th><th>Статус</th><th>Факт (по снимкам)</th><th style="width:28%">График</th></tr>
+  {% for r in tl.rows %}
+  <tr>
+    <td>{{ r.name }}</td>
+    <td class="muted">{{ r.start|ru_date }} — {{ r.end|ru_date }}</td>
+    <td><span class="swatch" style="background:{{ r.color }}"></span>{{ r.status_label }}{% if r.delay_days %}, {{ r.delay_days }} дн.{% endif %}</td>
+    <td class="muted">{% if r.actual_start %}{{ r.actual_start|ru_date }} — {{ r.actual_last|ru_date }}{% else %}нет подтверждений{% endif %}</td>
+    <td><div class="gantt"><span style="left:{{ r.left }}%;width:{{ r.width }}%;background:{{ r.color }}"></span></div></td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h3>Отклонения</h3>
+{% for d in v.deviations %}
+<div class="dev {{ d.severity }}"><div>
+  <b>{{ d.severity_label }}: {{ d.title }}</b>{% if d.zones %} <span class="muted">— зона: {{ d.zones|join(", ") }}</span>{% endif %}
+  <div>{{ d.message }}</div>
+  {% for pid in d.photo_ids[-2:] %}{% if thumbs.get(pid) %}<img src="{{ thumbs[pid] }}" alt="Снимок {{ pid }}">{% endif %}{% endfor %}
+</div></div>
+{% else %}<p>Отклонений не выявлено.</p>{% endfor %}
+
+<h3>Рекомендации</h3>
+{% if b.recommendations %}<ol>{% for r in b.recommendations %}<li>{{ r.text }}</li>{% endfor %}</ol>
+{% else %}<p>Действий не требуется.</p>{% endif %}
+
+<h3>Статистика наблюдений</h3>
+<p class="muted">Снимков: {{ b.photo_stats.n }}{% if b.photo_stats.first %}, с {{ b.photo_stats.first|ru_datetime }} по {{ b.photo_stats.last|ru_datetime }}{% endif %}.</p>
+{% if b.equipment_totals %}
+<table><tr><th>Техника</th><th>Обнаружений</th><th>Снимков</th></tr>
+{% for e in b.equipment_totals %}<tr><td>{{ e.label }}</td><td>{{ e.n }}</td><td>{{ e.photos }}</td></tr>{% endfor %}
+</table>{% endif %}
+{% endfor %}
+
+<h2>Рекомендации по установке камер</h2>
+<ol>{% for g in camera_guidelines %}<li>{{ g }}</li>{% endfor %}</ol>
+
+<h3>Легенда статусов</h3>
+<p>{% for l in legend %}<span style="margin-right:16px;white-space:nowrap"><span class="swatch" style="background:{{ l.color }}"></span>{{ l.label }}</span>{% endfor %}</p>
+</div></main></body>
+</html>
