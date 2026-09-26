@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-import shutil
 import time
 
 from app.core.catalog import OBJECT_TYPES, catalog_tree
@@ -40,7 +39,13 @@ LOGIN_MAX_ATTEMPTS = 10
 def _check_login_rate(ctx: AppContext, key: str) -> None:
     now_ts = time.time()
     tries = [t for t in ctx.login_attempts.get(key, []) if now_ts - t < LOGIN_WINDOW_SECONDS]
-    ctx.login_attempts[key] = tries
+    if tries:
+        ctx.login_attempts[key] = tries
+    else:
+        ctx.login_attempts.pop(key, None)
+    if len(ctx.login_attempts) > 1000:
+        for k in [k for k, v in ctx.login_attempts.items() if not v]:
+            ctx.login_attempts.pop(k, None)
     if len(tries) >= LOGIN_MAX_ATTEMPTS:
         wait = int((LOGIN_WINDOW_SECONDS - (now_ts - tries[0])) / 60) + 1
         raise ServiceError(429, f"Слишком много попыток входа. Повторите через {wait} мин")
@@ -149,8 +154,6 @@ def delete_project(ctx: AppContext, user_id: int, project_id: int) -> None:
     require_project(ctx, user_id, project_id)
     for b in ctx.db.all("SELECT id FROM buildings WHERE project_id = ?", (project_id,)):
         purge_building_files(ctx, b["id"])
-    for c in ctx.db.all("SELECT id FROM cameras WHERE project_id = ?", (project_id,)):
-        shutil.rmtree(ctx.settings.emulator_dir / str(c["id"]), ignore_errors=True)
     ctx.db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
 
 

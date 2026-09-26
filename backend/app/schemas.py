@@ -1,6 +1,8 @@
 """Схемы входных данных API (pydantic). Ответы — словари сервисного слоя."""
 from __future__ import annotations
 
+from typing import Annotated
+
 from pydantic import BaseModel, Field
 
 
@@ -57,8 +59,10 @@ class BulkToggleIn(BaseModel):
 
 class DetectionIn(BaseModel):
     cls: str
-    bbox: list[float]
-    confidence: float = 1.0
+    bbox: Annotated[list[float], Field(min_length=4, max_length=4)]
+    confidence: float = Field(1.0, ge=0, le=1)
+    label_raw: str = ""
+    manual: bool = True
 
 
 class DetectionsIn(BaseModel):
@@ -67,27 +71,11 @@ class DetectionsIn(BaseModel):
 
 class CameraIn(BaseModel):
     name: str
-    source_type: str = "upload"
     zone: str = ""
-    url: str = ""
     building_id: int | None = None
-    interval_min: int = 30
-    tick_seconds: int = 10
-    active: bool = False
-    emulator_start: str | None = None
 
 
 class CameraPatch(BaseModel):
     name: str | None = None
     zone: str | None = None
-    url: str | None = None
     building_id: int | None = None
-    interval_min: int | None = None
-    tick_seconds: int | None = None
-    active: bool | None = None
-    emulator_start: str | None = None
-
-
-class EmulatorResetIn(BaseModel):
-    start_at: str | None = None
-    clear_frames: bool = False

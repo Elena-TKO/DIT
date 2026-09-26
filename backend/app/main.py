@@ -14,7 +14,6 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import routes_core, routes_media
 from app.config import Settings
-from app.services import cameras
 from app.services.common import AppContext, ServiceError
 
 log = logging.getLogger("stroykontrol")
@@ -29,18 +28,6 @@ a{{color:#22282D}}.btn{{display:inline-block;background:#F2B705;padding:10px 18p
 </body></html>"""
 
 
-async def camera_poller(ctx: AppContext):
-    """Фоновый опрос камер и эмуляторов."""
-    while True:
-        await asyncio.sleep(ctx.settings.camera_poll_seconds)
-        try:
-            result = await asyncio.to_thread(cameras.poll_due, ctx)
-            if result["polled"] or result["failed"]:
-                log.info("Опрос камер: %s", result)
-        except Exception:
-            log.exception("Сбой фонового опроса камер")
-
-
 def create_app(settings: Settings | None = None, detector=None) -> FastAPI:
     settings = settings or Settings()
 
@@ -50,8 +37,6 @@ def create_app(settings: Settings | None = None, detector=None) -> FastAPI:
         app.state.ctx = ctx
         tasks = [asyncio.create_task(asyncio.to_thread(lambda: ctx.detector))]   # прогрев модели
         log.info("Интерфейс: %s · API: http://localhost:8000/docs", os.environ.get("FRONTEND_URL", "http://localhost:8080"))
-        if settings.enable_poller:
-            tasks.append(asyncio.create_task(camera_poller(ctx)))
         yield
         for t in tasks:
             t.cancel()

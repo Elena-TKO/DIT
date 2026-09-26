@@ -12,7 +12,6 @@
 * NOT_IN_PLAN           — идут работы этапа, которого нет в плане объекта;
 * UNEXPECTED_EQUIPMENT  — техника, не соответствующая текущим этапам;
 * IDLE_EQUIPMENT        — техника стоит дольше порога;
-* CAMERA_SILENT         — камера давно не присылала снимки;
 * OUT_OF_VIEW           — часть работ по графику визуально не контролируется.
 """
 from __future__ import annotations
@@ -60,9 +59,7 @@ def _fmt(d: dt.date) -> str:
     return d.strftime("%d.%m.%Y")
 
 
-def build_verdict(m: Methodology, at: dt.datetime, tasks: list[dict], photos: list[PhotoObs],
-                  cameras: list[dict] | None = None) -> dict:
-    cameras = cameras or []
+def build_verdict(m: Methodology, at: dt.datetime, tasks: list[dict], photos: list[PhotoObs]) -> dict:
     cfg = m.analysis
     window_start = at - dt.timedelta(hours=cfg["window_hours"])
     window = [p for p in photos if window_start <= p.taken_at <= at]
@@ -210,18 +207,6 @@ def build_verdict(m: Methodology, at: dt.datetime, tasks: list[dict], photos: li
             None, [cls], g["photo"], [g["zone"]])
 
     # ---------- камеры ----------
-    factor = cfg["camera_silence_factor"]
-    for cam in cameras:
-        if not cam.get("active") or cam.get("source_type") == "upload":
-            continue
-        last = cam.get("last_photo_at")
-        limit = dt.timedelta(minutes=factor * int(cam.get("interval_min") or 30))
-        if last is None or at - last > limit:
-            add("CAMERA_SILENT", "warning", "Камера молчит",
-                f"Камера «{cam['name']}» не присылала снимков "
-                + (f"с {last.strftime('%d.%m %H:%M')}" if last else "ни разу") + ".",
-                None, [], [], [cam.get("zone", "")])
-
     hidden = [m.phase(p).name for p in planned_ids if m.phase(p).observability == "none"]
     if hidden:
         add("OUT_OF_VIEW", "info", "Вне визуального контроля",

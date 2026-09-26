@@ -24,21 +24,10 @@ def default_at(ctx: AppContext, building_id: int) -> dt.datetime:
     return parse_dt(row["last"]) if row and row["last"] else now()
 
 
-def _cameras_for(ctx: AppContext, building: dict) -> list[dict]:
-    cams = ctx.db.all(
-        "SELECT c.*, (SELECT MAX(taken_at) FROM photos ph WHERE ph.camera_id = c.id) AS last_photo "
-        "FROM cameras c WHERE c.project_id = ? AND (c.building_id = ? OR c.building_id IS NULL)",
-        (building["project_id"], building["id"]))
-    for c in cams:
-        c["active"] = bool(c["active"])
-        c["last_photo_at"] = parse_dt(c.pop("last_photo"))
-    return cams
-
-
 def _compute(ctx: AppContext, building: dict, at: dt.datetime) -> tuple[dict, dict, list[dict], dict]:
     tasks = active_leaf_tasks(ctx, building["id"])
     photos = load_obs(ctx, building["id"], until=at)
-    verdict = build_verdict(ctx.m, at, tasks, photos, _cameras_for(ctx, building))
+    verdict = build_verdict(ctx.m, at, tasks, photos)
     timeline = build_timeline(ctx.m, at, tasks, photos, building["start_date"], building["end_date"])
     window = [p for p in photos if p.taken_at >= at - dt.timedelta(hours=ctx.m.analysis["window_hours"])]
     money = economics_summary(ctx.m, timeline, window, photos)
