@@ -44,12 +44,15 @@ def _thumb_b64(ctx: AppContext, photo_id: int, width: int = 360) -> str | None:
     path = image_path(ctx, photo)
     if not path.exists():
         return None
-    with Image.open(path) as img:
-        img = img.convert("RGB")
-        img.thumbnail((width, width))
-        buf = io.BytesIO()
-        img.save(buf, "JPEG", quality=70)
-    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    try:
+        with Image.open(path) as img:
+            img = img.convert("RGB")
+            img.thumbnail((width, width))
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=70)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except:
+        return None
 
 
 def render_report(ctx: AppContext, user_id: int, project_id: int, at: str | None = None) -> str:

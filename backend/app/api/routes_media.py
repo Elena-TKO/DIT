@@ -7,12 +7,22 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from app import schemas
 from app.api.deps import current_user, get_ctx
 from app.services import analysis, cameras, photos
-from app.services.common import AppContext
+from app.services.common import AppContext, ServiceError
 
 router = APIRouter(prefix="/api")
 
+MAX_BATCH_MB = 200
 
 def _read(files: list[UploadFile]) -> list[tuple[str, bytes]]:
+    limit = MAX_BATCH_MB * 1024 * 1024
+    total = 0
+    for f in files:
+        f.file.seek(0, 2)
+        size = f.file.tell()
+        f.file.seek(0)
+        total += size
+        if total > limit:
+            raise ServiceError(413, f"Слишком большой пакет: больше {MAX_BATCH_MB} МБ")
     return [(f.filename or "photo", f.file.read()) for f in files]
 
 
@@ -127,20 +137,3 @@ def update_camera(camera_id: int, body: schemas.CameraPatch, user: int = Depends
 def delete_camera(camera_id: int, user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
     cameras.delete_camera(ctx, user, camera_id)
     return Response(status_code=204)
-
-
-@router.post("/cameras/{camera_id}/poll", tags=["cameras"])
-def poll_camera(camera_id: int, user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
-    return cameras.poll_now(ctx, user, camera_id)
-
-
-@router.post("/cameras/{camera_id}/frames", tags=["cameras"])
-def upload_frames(camera_id: int, files: list[UploadFile] = File(...), user: int = Depends(current_user),
-                  ctx: AppContext = Depends(get_ctx)):
-    return cameras.upload_emulator_frames(ctx, user, camera_id, _read(files))
-
-
-@router.post("/cameras/{camera_id}/reset", tags=["cameras"])
-def reset_emulator(camera_id: int, body: schemas.EmulatorResetIn, user: int = Depends(current_user),
-                   ctx: AppContext = Depends(get_ctx)):
-    return cameras.reset_emulator(ctx, user, camera_id, body.start_at, body.clear_frames)

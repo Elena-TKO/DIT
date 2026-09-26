@@ -25,19 +25,14 @@ class Settings:
     detect_imgsz: int = field(default_factory=lambda: int(_env("DETECT_IMGSZ", "1280")))
     device: str | None = field(default_factory=lambda: os.environ.get("DEVICE") or None)
     mock_annotations_dir: str | None = field(default_factory=lambda: os.environ.get("MOCK_ANNOTATIONS_DIR"))
-    # Разрешить камеры на localhost: нужно для тестов и демостенда, в продакшене оставить 0
     detect_tiles: int = field(default_factory=lambda: int(_env("DETECT_TILES", "1")))
-    allow_local_cameras: bool = field(default_factory=lambda: _env("ALLOW_LOCAL_CAMERAS", "0") == "1")
     cors_origins: list[str] = field(default_factory=lambda: [o.strip() for o in _env(
         "CORS_ORIGINS", "http://localhost:5173,http://localhost:8080").split(",") if o.strip()])
-    camera_poll_seconds: int = field(default_factory=lambda: int(_env("CAMERA_POLL_SECONDS", "5")))
     max_upload_mb: int = field(default_factory=lambda: int(_env("MAX_UPLOAD_MB", "25")))
-    enable_poller: bool = field(default_factory=lambda: _env("ENABLE_CAMERA_POLLER", "1") == "1")
 
     def __post_init__(self):
         self.data_dir.mkdir(parents=True, exist_ok=True)
         (self.data_dir / "photos").mkdir(exist_ok=True)
-        (self.data_dir / "emulator").mkdir(exist_ok=True)
         if not self.secret_key:
             # Ключ сохраняется, чтобы токены переживали перезапуск
             key_file = self.data_dir / ".secret_key"
@@ -52,7 +47,3 @@ class Settings:
     @property
     def photos_dir(self) -> Path:
         return self.data_dir / "photos"
-
-    @property
-    def emulator_dir(self) -> Path:
-        return self.data_dir / "emulator"

@@ -43,23 +43,28 @@ class AppContext:
 
 
 def now() -> dt.datetime:
-    return dt.datetime.now().replace(microsecond=0)
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None, microsecond=0)
 
 
 def iso(value: dt.datetime) -> str:
     return value.replace(microsecond=0).isoformat()
 
 
-def parse_dt(value: str | dt.datetime | None, default: dt.datetime | None = None) -> dt.datetime | None:
+def parse_dt(value, default=None):
     if value is None or value == "":
         return default
     if isinstance(value, dt.datetime):
-        return value.replace(microsecond=0, tzinfo=None)
+        if value.tzinfo is not None:
+            value = value.astimezone(dt.timezone.utc).replace(tzinfo=None)
+        return value.replace(microsecond=0)
     text = str(value).strip().replace(" ", "T").rstrip("Z")
     try:
         if len(text) == 10:
             return dt.datetime.combine(dt.date.fromisoformat(text), dt.time(12, 0))
-        return dt.datetime.fromisoformat(text).replace(microsecond=0, tzinfo=None)
+        parsed = dt.datetime.fromisoformat(text)
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(dt.timezone.utc).replace(tzinfo=None)
+        return parsed.replace(microsecond=0)
     except ValueError:
         raise ServiceError(422, f"Некорректная дата/время: {value}")
 

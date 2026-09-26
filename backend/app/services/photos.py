@@ -7,6 +7,8 @@ import re
 import shutil
 import time
 import uuid
+import hashlib
+import sqlite3
 from pathlib import Path
 
 import numpy as np
@@ -74,6 +76,8 @@ def trim_borders(data: bytes, max_share: float = 0.12) -> bytes:
             return data
         if top >= h * max_share or left >= w * max_share or h - bottom >= h * max_share or w - right >= w * max_share:
             return data          # «поле» слишком широкое — вероятно, это содержимое кадра (снег, небо)
+        if (right - left) < 64 or (bottom - top) < 64:
+            return data
         cropped = img.crop((left, top, right, bottom))
         if cropped.mode not in ("RGB", "L"):
             cropped = cropped.convert("RGB")
@@ -90,6 +94,7 @@ def ingest_photo(ctx: AppContext, building: dict, camera: dict | None, original_
     """Сохраняет снимок, запускает детекцию и записывает результат. Возвращает id снимка."""
     _validate_image(data, ctx.settings.max_upload_mb)
     data = trim_borders(data)
+    content_hash = hashlib.sha256(data).hexdigest()
     _, w, h = _validate_image(data, ctx.settings.max_upload_mb)
     folder = ctx.settings.photos_dir / str(building["id"])
     folder.mkdir(parents=True, exist_ok=True)
@@ -107,11 +112,15 @@ def ingest_photo(ctx: AppContext, building: dict, camera: dict | None, original_
     elapsed = int((time.perf_counter() - started) * 1000)
 
     with ctx.db.connect() as conn:
-        photo_id = conn.execute(
-            "INSERT INTO photos (building_id, camera_id, original_name, file_name, width, height, taken_at, "
-            "uploaded_at, detector, process_ms) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (building["id"], camera["id"] if camera else None, original_name or file_name, file_name, w, h,
-             iso(taken_at), iso(now()), ctx.detector.name, elapsed)).lastrowid
+        try:
+            photo_id = conn.execute(
+                "INSERT INTO photos (building_id, camera_id, original_name, file_name, width, height, taken_at, "
+                "uploaded_at, detector, process_ms, content_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (building["id"], camera["id"] if camera else None, original_name or file_name, file_name, w, h,
+                iso(taken_at), iso(now()), ctx.detector.name, elapsed, content_hash)).lastrowid
+        except sqlite3.IntegrityError:
+            path.unlink(missing_ok=True)
+            raise ServiceError(409, "Такой снимок уже загружен")
         conn.executemany(
             "INSERT INTO detections (photo_id, cls, label_raw, confidence, x1, y1, x2, y2) VALUES (?,?,?,?,?,?,?,?)",
             [(photo_id, d.cls, d.label_raw, d.confidence, *d.bbox) for d in detections])
@@ -124,6 +133,8 @@ def upload_photos(ctx: AppContext, user_id: int, building_id: int, files: list[t
     building = require_building(ctx, user_id, building_id)
     if not files:
         raise ServiceError(422, "Выберите хотя бы один снимок")
+    if len(files) > 200:
+        raise ServiceError(422, "За один раз можно загрузить не более 200 снимков")
     camera = None
     if camera_id:
         camera = require_camera(ctx, user_id, camera_id)
