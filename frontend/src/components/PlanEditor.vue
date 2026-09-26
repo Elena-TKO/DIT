@@ -90,11 +90,11 @@ onMounted(async () => {
 
 <template>
   <section class="stack">
-    <div class="panel">
+    <div class="panel-scroll">
       <div class="panel-head">
         <div>
-          <h2>План работ</h2>
-          <p class="muted small">Сформирован по справочнику для типа объекта. Отключите работы, которых на объекте не будет, и поправьте сроки.</p>
+          <h2>Редактирование плана работ</h2>
+          <!-- <p class="muted small">Сформирован по справочнику для типа объекта. Отключите работы, которых на объекте не будет, и поправьте сроки.</p> -->
         </div>
         <div class="row">
           <button class="btn ghost" type="button" :disabled="busy" @click="regenerate">Сбросить</button>

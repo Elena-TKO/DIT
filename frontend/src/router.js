@@ -3,6 +3,7 @@ import { session } from './store.js'
 import LoginView from './views/LoginView.vue'
 import ProjectsView from './views/ProjectsView.vue'
 import ProjectView from './views/ProjectView.vue'
+import ProjectView from './views/PhaseDetail.vue'
 import BuildingView from './views/BuildingView.vue'
 
 const router = createRouter({
@@ -11,6 +12,11 @@ const router = createRouter({
     { path: '/login', component: LoginView, meta: { public: true } },
     { path: '/', component: ProjectsView },
     { path: '/projects/:id', component: ProjectView, props: (r) => ({ id: Number(r.params.id) }) },
+    {
+      path: '/buildings/:buildingId/phases/:phaseId',
+      name: 'phase',
+      component: ProjectView
+    },
     {
       path: '/buildings/:id/:tab?',
       component: BuildingView,

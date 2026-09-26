@@ -29,6 +29,132 @@ def me(user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
     return projects.get_user(ctx, user)
 
 
+
+# ---------------------------------------------------------------- этапы и фотографии — MOCK
+MOCK_PHASES = {
+    3: {
+        "DEMOLITION": {
+            "id": "DEMOLITION",
+            "building_id": 3,
+            "name": "Демонтаж",
+            "description": "Демонтаж существующих конструкций здания.",
+            "start": "2026-06-01",
+            "end": "2026-06-20",
+            "status": "done",
+            "status_label": "Завершено",
+            "completion_percent": 100,
+            "updated_at": "2026-09-18T14:30:00",
+        },
+        "FOUNDATION": {
+            "id": "FOUNDATION",
+            "building_id": 3,
+            "name": "Фундамент",
+            "description": "Устройство фундамента.",
+            "start": "2026-06-15",
+            "end": "2026-07-30",
+            "status": "in_progress",
+            "status_label": "В работе",
+            "completion_percent": 72,
+            "updated_at": "2026-09-18T14:30:00",
+        },
+        "FACADE": {
+            "id": "FACADE",
+            "building_id": 3,
+            "name": "Фасад",
+            "description": "Монтаж фасадных конструкций.",
+            "start": "2026-08-01",
+            "end": "2026-10-15",
+            "status": "in_progress",
+            "status_label": "В работе",
+            "completion_percent": 45,
+            "updated_at": "2026-09-18T14:30:00",
+        },
+    }
+}
+
+
+@router.get(
+    "/buildings/{building_id}/phases/{phase_id}",
+    tags=["phases"],
+)
+def get_phase_mock(
+    building_id: int,
+    phase_id: str,
+    user=Depends(current_user),
+):
+    phases = MOCK_PHASES.get(building_id, {})
+    phase = phases.get(phase_id)
+
+    if phase is None:
+        return {
+            "id": phase_id,
+            "building_id": building_id,
+            "name": phase_id,
+            "description": "Тестовый этап строительства.",
+            "start": "2026-09-01",
+            "end": "2026-10-01",
+            "status": "planned",
+            "status_label": "Запланировано",
+            "completion_percent": 0,
+            "updated_at": "2026-09-18T14:30:00",
+        }
+
+    return phase
+
+
+MOCK_PHOTOS = {
+    (3, "DEMOLITION"): [
+        {
+            "id": 301,
+            "building_id": 3,
+            "phase_id": "DEMOLITION",
+            "date": "2026-06-05",
+            "caption": "Демонтаж внутренних конструкций",
+        },
+        {
+            "id": 302,
+            "building_id": 3,
+            "phase_id": "DEMOLITION",
+            "date": "2026-06-12",
+            "caption": "Демонтаж перекрытий",
+        },
+        {
+            "id": 303,
+            "building_id": 3,
+            "phase_id": "DEMOLITION",
+            "date": "2026-06-19",
+            "caption": "Завершение демонтажных работ",
+        },
+    ],
+    (3, "FOUNDATION"): [
+        {
+            "id": 401,
+            "building_id": 3,
+            "phase_id": "FOUNDATION",
+            "date": "2026-07-01",
+            "caption": "Армирование фундамента",
+        },
+    ],
+}
+
+
+@router.get(
+    "/buildings/{building_id}/photos",
+    tags=["photos"],
+)
+def get_building_photos_mock(
+    building_id: int,
+    phase_id: str | None = Query(default=None),
+    user=Depends(current_user),
+):
+    if phase_id is None:
+        return []
+
+    return MOCK_PHOTOS.get(
+        (building_id, phase_id),
+        []
+    )
+
 # ---------------------------------------------------------------- справочники
 @router.get("/health", tags=["reference"])
 def health(ctx: AppContext = Depends(get_ctx)):

@@ -91,6 +91,10 @@ export const api = {
   analysis: (buildingId, at) => request('GET', `/buildings/${buildingId}/analysis`, { query: { at } }),
   runAnalysis: (buildingId, at) => request('POST', `/buildings/${buildingId}/analysis`, { query: { at } }),
   timeline: (buildingId, at) => request('GET', `/buildings/${buildingId}/timeline`, { query: { at } }),
+  phase: (buildingId, phaseId) =>
+  request('GET', `/buildings/${buildingId}/phases/${phaseId}`),
+  phasePhotos: (buildingId, phaseId) =>
+    request('GET', `/buildings/${buildingId}/phases/${phaseId}/photos`),
   history: (buildingId) => request('GET', `/buildings/${buildingId}/history`),
   deviations: (buildingId) => request('GET', `/buildings/${buildingId}/deviations`),
   reportLink: (projectId, ttlHours) => request('POST', `/projects/${projectId}/report-link`, { query: { ttl_hours: ttlHours } }),
@@ -119,3 +123,5 @@ export function reportUrl(projectId, at) {
   if (at) q.set('at', at)
   return `/api/projects/${projectId}/report.html?${q}`
 }
+
+

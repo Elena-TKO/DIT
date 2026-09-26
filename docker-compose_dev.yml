@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        WITH_ML: "1"          # 0 — без нейросети (быстрая сборка, DETECTOR=mock)
+        PRELOAD_MODEL: "1"
+    environment:
+      DETECTOR: ${DETECTOR:-ultralytics}
+      MODEL_WEIGHTS: ${MODEL_WEIGHTS:-yolov8s-worldv2.pt}
+      SECRET_KEY: ${SECRET_KEY:-}   
+      DATA_DIR: /data
+    volumes:
+      - stroy-data:/data
+      - ./models:/app/models      
+      # --- ДЛЯ РАЗРАБОТКИ БЭКЕНДА ---
+      - ./backend:/app            # Монтируем код бэкенда, чтобы изменения применялись сразу
+    # Переопределяем команду на автоперезапуск (uwsgi/gunicorn меняем на uvicorn с флагом --reload)
+    # Настройте команду под ваш фреймворк (пример для FastAPI/Uvicorn, где main — это имя файла):
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    # Для разработки фронтенда мы временно отказываемся от Nginx сборки из Dockerfile,
+    # так как она не умеет обновлять код «на лету»
+    image: node:20-alpine
+    working_dir: /app
+    ports:
+      - "5173:5173" # Открываем dev-порт (например, 8080 или 5173 для Vite)
+    volumes:
+      - ./frontend:/app           # Монтируем код фронтенда для Hot Reload
+      - /app/node_modules         # Изолируем node_modules контейнера
+    # Команда запуска dev-сервера (замените на вашу, если отличается):
+    command: npm install && npm run dev -- --host 0.0.0.0 --port 5173
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  stroy-data:

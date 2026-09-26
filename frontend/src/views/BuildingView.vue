@@ -87,7 +87,7 @@ watch(() => props.tab, () => {
   <main class="page">
     <p v-if="error" class="error">{{ error }}</p>
     <template v-if="building">
-      <section class="hero" :class="{ bare: !building.cover_photo_id }" aria-label="Объект">
+      <!-- <section class="hero" :class="{ bare: !building.cover_photo_id }" aria-label="Объект">
         <div class="cover hero-cover" :class="{ empty: !building.cover_photo_id }">
           <img v-if="building.cover_photo_id" :src="imageUrl(building.cover_photo_id, 1920)" alt="Последний снимок площадки" />
         </div>
@@ -115,7 +115,7 @@ watch(() => props.tab, () => {
             </dl>
           </div>
         </div>
-      </section>
+      </section> -->
 
       <nav ref="stepsEl" class="steps" aria-label="Шаги работы с объектом">
         <RouterLink v-for="(s, i) in STEPS" :key="s.key" :to="`/buildings/${id}/${s.key}`" class="step"
@@ -124,11 +124,11 @@ watch(() => props.tab, () => {
         </RouterLink>
       </nav>
 
-      <PlanEditor v-if="current === 'plan'" :key="`plan-${id}`" :building-id="id" @changed="onChanged" />
+      <GanttChart v-if="current === 'plan'" :key="`plan-${id}`" :building-id="id" @changed="onChanged" />
       <PhotosPanel v-else-if="current === 'photos'" :key="`photos-${id}`" :building="building" :classes="classes" :equipment="methodology?.equipment || []" @changed="onChanged" />
       <AnalysisPanel v-else-if="current === 'analysis'" :key="`analysis-${id}-${version}`" :building-id="id"
         :classes="classes" :labels="labels" :activity="methodology?.activity || {}" @changed="loadSummary" />
-      <GanttChart v-else-if="current === 'timeline'" :key="`timeline-${id}-${version}`" :building-id="id" />
+      <!-- <GanttChart v-else-if="current === 'timeline'" :key="`timeline-${id}-${version}`" :building-id="id" /> -->
       <ReportPanel v-else :key="`report-${id}`" :building="building" />
     </template>
   </main>
