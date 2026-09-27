@@ -36,7 +36,7 @@ async function createBuilding() {
   try {
     const b = await api.createBuilding(props.id, form.value)
     refreshNav()
-    router.push(`/buildings/${b.id}/plan`)
+    router.push(`/buildings/${b.id}/photos`)
   } catch (e) {
     formError.value = e.message
   } finally {

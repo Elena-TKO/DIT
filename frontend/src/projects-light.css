@@ -1,0 +1,71 @@
+.shell.projects-light { --sidebar:252px; --font:Inter,"Segoe UI",sans-serif; --serif:Georgia,serif; --ink:#1f2430; --ink-2:#6e7787; --ink-3:#8a94a6; --hair:#e7ecf1; --hair-2:#dde5ec; --accent:#4073f4; --accent-ink:#fff; --critical:#b42336; color-scheme:light; background:#f4f7fa; color:var(--ink); font-family:var(--font); }
+.projects-light .sidebar { background:#fbfbfc; border:0; padding:20px 20px; }
+.projects-light .brand { padding:0 0 38px 38px; }
+.projects-light .brand-name { font-size:24px; font-weight:400; letter-spacing:-.7px; }
+.projects-light .brand-mark,.projects-light .nav-thumb:not(.plus) { display:none; }
+.projects-light .nav-title { padding:0 0 14px; font-size:11px; font-weight:700; text-transform:uppercase; }
+.projects-light .nav-link { padding:10px 0; font-size:13px; min-height:38px; }
+.projects-light .nav-link:hover { color:#3568f2; background:transparent; }
+.projects-light .new-link { font-weight:700; color:#1f2430; }
+.projects-light .nav-thumb.plus { width:16px; height:20px; border:0; color:#1f2430; }
+.projects-light .sidebar-foot { padding:16px 0 0; gap:6px; }
+.projects-light .sidebar-foot .who { overflow-wrap:anywhere; }
+.projects-light .btn.primary { background:linear-gradient(110deg,#3568f2,#4174f4); border-color:#4073f4; color:white; font-weight:700; }
+.projects-light .btn.primary:hover { background:#285bdc; }
+.projects-light .btn:hover { border-color:#4073f4; }
+.projects-page { max-width:1188px; margin:0 auto; padding:42px 112px 74px 56px; }
+.projects-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:40px; }
+.projects-heading h1 { font-size:46px; line-height:52px; font-weight:400; }
+.projects-heading p { color:#8a94a6; font-size:14px; margin:10px 0 0; line-height:18px; }
+.projects-heading .btn { margin-top:14px; min-width:188px; height:44px; font-size:15px; }
+.construction-list { list-style:none; padding:0; margin:0; display:grid; gap:30px; }
+.construction-card { background:white; border-radius:22px; overflow:hidden; }
+.construction-cover { position:relative; display:flex; flex-direction:column; justify-content:flex-end; min-height:188px; background:#eef3f7; padding:72px 32px 24px; text-decoration:none; }
+.construction-cover:hover { background:#e8eff6; }
+.construction-cover:focus-visible { outline-offset:-4px; }
+.construction-cover h2 { font-size:30px; font-weight:400; line-height:34px; overflow-wrap:anywhere; }
+.construction-cover p { margin:8px 0 0; color:#8a94a6; font-size:13px; line-height:16px; }
+.construction-status { position:absolute; top:26px; right:32px; font-size:12px; font-weight:700; color:#6e7787; }
+.construction-status.ok { color:#248550; }
+.construction-status.warning { color:#6f63ff; }
+.construction-status.critical { color:#b42336; }
+.construction-facts { min-height:148px; padding:24px 32px 34px; display:grid; grid-template-columns:minmax(200px,1fr) 102px 120px 112px 164px; gap:24px; align-items:start; }
+.fact-label { display:block; color:#8a94a6; font-size:11px; font-weight:700; margin:4px 0 12px; }
+.fact-value { display:block; font:22px/28px Georgia,serif; }
+.fact-value.forecast { font-size:18px; line-height:21px; }
+.progress-values { display:flex; gap:28px; align-items:baseline; }
+.progress-values strong { font:28px/32px Georgia,serif; }
+.progress-values span { color:#8a94a6; font-size:12px; font-weight:700; }
+.construction-bar { position:relative; height:4px; background:#edf1f5; margin-top:19px; max-width:308px; }
+.construction-bar i { display:block; height:4px; background:#202833; }
+.construction-bar b { position:absolute; top:-5px; height:14px; width:2px; background:#4174f4; }
+.construction-report { display:flex; gap:12px; align-items:flex-start; padding:15px 16px; min-height:84px; border:1px solid #d8e0ea; border-radius:14px; background:#f8fafc; text-decoration:none; }
+.construction-report:hover { border-color:#4174f4; background:#eef3ff; }
+.construction-report svg { width:24px; height:28px; color:#4174f4; flex:none; }
+.construction-report b,.construction-report strong,.construction-report small { display:block; white-space:nowrap; }
+.construction-report b { font-size:14px; line-height:18px; }
+.construction-report strong { font-size:11px; color:#4174f4; margin-top:4px; }
+.construction-report small { font-size:10px; color:#6e7787; }
+.projects-notice { padding:32px; background:white; border-radius:20px; }
+.projects-notice p { margin:12px 0 24px; }
+.summary-error { padding:0 32px 16px; font-size:12px; color:#b42336; }
+.summary-error button { font:inherit; background:none; border:0; text-decoration:underline; cursor:pointer; color:inherit; }
+.new-construction { color:var(--ink); width:min(1064px,calc(100vw - 48px)); max-height:calc(100dvh - 48px); border:1px solid #e7ecf1; border-radius:20px; padding:32px; background:white; margin:12vh max(24px,calc((100vw - 1440px)/2 + 104px)) 24px auto; box-shadow:0 24px 80px #15203320; }
+.new-construction::backdrop { background:rgba(21,24,51,.23); }
+.new-construction h2 { font:38px/44px Georgia,serif; padding-right:32px; }
+.new-construction #new-description { font-size:16px; color:#7e8898; margin:16px 0 28px; }
+.modal-close { position:absolute; top:24px; right:24px; width:32px; height:32px; display:grid; place-items:center; background:none; border:0; cursor:pointer; color:#7e8898; }
+.modal-close svg { width:24px; height:24px; }
+.construction-form { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:20px; }
+.construction-form .field { color:#6e7787; font-size:13px; }
+.construction-form .form-wide { grid-column:span 2; }
+.construction-form input { width:100%; height:51px; background:#fafbfd; color:#1f2430; border:1px solid #dde5ec; font-size:15px; }
+.construction-form input:focus { background:white; border-color:#4073f4; box-shadow:0 0 0 2px #4073f425; }
+.create-actions { grid-column:span 2; display:flex; align-items:flex-end; justify-content:flex-end; }
+.create-actions .btn { height:49px; min-width:184px; font-size:16px; }
+@media(max-width:1350px) { .projects-page { padding-right:40px; padding-left:40px; } .construction-facts { grid-template-columns:minmax(180px,1fr) 70px 70px 100px 164px; gap:16px; } }
+@media(max-width:1100px) { .construction-facts { grid-template-columns:repeat(3,minmax(0,1fr)); } .construction-progress { grid-column:span 2; } .construction-report { align-self:end; } .shell.projects-light { grid-template-columns:220px minmax(0,1fr); } .projects-light .brand { padding-left:0; } .projects-light .nav-group { display:block; } .projects-light .sidebar { height:100vh; position:sticky; } }
+@media(max-width:760px) { .shell.projects-light { grid-template-columns:1fr; } .projects-light .sidebar { position:static; height:auto; padding:16px 20px; } .projects-light .brand { padding:0 0 12px; } .projects-light .nav-group { display:flex; gap:20px; overflow-x:auto; } .projects-light .nav-title,.projects-light .sidebar-foot { display:none; } .projects-light .nav-link { flex-shrink:0; } .projects-page { padding:28px 20px 48px; } .projects-heading { flex-wrap:wrap; margin-bottom:28px; } .projects-heading h1 { font-size:38px; } .projects-heading .btn { margin-top:0; } .construction-cover { padding:64px 24px 24px; } .construction-cover h2 { font-size:26px; } .construction-facts { padding:20px 24px 28px; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; } .construction-progress { grid-column:span 2; } .construction-status { right:24px; } .new-construction { padding:24px; margin:24px auto; } .new-construction h2 { font-size:30px; } .new-construction #new-description { font-size:14px; } .construction-form { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; } .construction-form .field { grid-column:span 2; } .create-actions { justify-content:stretch; } .create-actions .btn { width:100%; } .construction-report { padding:12px; gap:6px; } }
+@media(max-width:1100px) { .projects-light .sidebar { flex-direction:column; align-items:stretch; } .projects-light .sidebar-foot { margin-top:auto; } }
+@media(max-width:760px) { .projects-light .sidebar { gap:0; } .projects-light .nav-group { width:100%; } .projects-light .sidebar-foot { display:flex; margin-top:8px; padding-top:8px; } .projects-light .sidebar-foot .who { display:block; } }
+html:has(.projects-light) { color-scheme:light; }

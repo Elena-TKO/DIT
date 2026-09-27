@@ -7,6 +7,7 @@ import BuildingView from './views/BuildingView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior: (_to, _from, savedPosition) => savedPosition || { top: 0 },
   routes: [
     { path: '/login', component: LoginView, meta: { public: true } },
     { path: '/', component: ProjectsView },
@@ -14,7 +15,7 @@ const router = createRouter({
     {
       path: '/buildings/:id/:tab?',
       component: BuildingView,
-      props: (r) => ({ id: Number(r.params.id), tab: r.params.tab || 'plan' }),
+      props: (r) => ({ id: Number(r.params.id), tab: r.params.tab || 'photos' }),
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

@@ -28,7 +28,7 @@ watch(() => [session.token, ui.projectId, ui.navVersion], loadNav, { immediate: 
 </script>
 
 <template>
-  <div v-if="withShell" class="shell">
+  <div v-if="withShell" class="shell projects-light">
     <aside class="sidebar">
       <RouterLink to="/" class="brand">
         <span class="brand-mark"><Icon name="crane" /></span><span class="brand-name">СтройКонтроль</span>
@@ -40,10 +40,16 @@ watch(() => [session.token, ui.projectId, ui.navVersion], loadNav, { immediate: 
             <span class="nav-thumb"><img v-if="p.cover_photo_id" :src="imageUrl(p.cover_photo_id, 120)" alt="" /></span>{{ p.name }}
           </RouterLink>
           <div v-if="ui.projectId === p.id && buildings.length" class="nav-sub">
-            <RouterLink v-for="b in buildings" :key="b.id" :to="`/buildings/${b.id}/analysis`" class="nav-link"
+            <RouterLink v-for="b in buildings" :key="b.id" :to="`/buildings/${b.id}/photos`" class="nav-link"
               :class="{ active: ui.buildingId === b.id }">
               <span class="dot" :class="b.photos ? b.status : ''"></span>{{ b.name }}
             </RouterLink>
+            <div v-if="ui.buildingId" class="building-nav">
+              <RouterLink :to="`/buildings/${ui.buildingId}/cameras`">Мониторинг техники</RouterLink>
+              <RouterLink :to="`/buildings/${ui.buildingId}/plan`">План работ</RouterLink>
+              <RouterLink :to="`/buildings/${ui.buildingId}/photos`">Фото и отклонения</RouterLink>
+              <RouterLink :to="`/buildings/${ui.buildingId}/report`">Отчёт</RouterLink>
+            </div>
           </div>
         </template>
         <RouterLink to="/?new=1" class="nav-link new-link">
@@ -60,6 +66,9 @@ watch(() => [session.token, ui.projectId, ui.navVersion], loadNav, { immediate: 
   </div>
   <RouterView v-else />
 </template>
+
+<style src="./projects-light.css"></style>
+<style src="./workspace-light.css"></style>
 
 <style>
 .nav-thumb.plus { display: grid; place-items: center; background: transparent; border: 1px dashed var(--hair-2); color: var(--ink-3); }

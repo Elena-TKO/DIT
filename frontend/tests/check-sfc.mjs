@@ -3,12 +3,13 @@
 // Запуск: node tests/check-sfc.mjs   (нужен пакет typescript)
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'src')
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src')
 const VOID = new Set(['input', 'img', 'br', 'hr', 'meta', 'link', 'source', 'col', 'area', 'wbr'])
 const TEMPLATE_GLOBALS = new Set(('Infinity,undefined,NaN,isFinite,isNaN,parseFloat,parseInt,decodeURI,' +
   'decodeURIComponent,encodeURI,encodeURIComponent,Math,Number,Date,Array,Object,Boolean,String,RegExp,Map,Set,' +
