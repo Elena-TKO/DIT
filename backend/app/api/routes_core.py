@@ -6,7 +6,9 @@ from fastapi.responses import HTMLResponse, Response
 
 from app import schemas
 from app.api.deps import current_user, get_ctx
-from app.services import analysis, projects
+from app.core.norms import CALCULATORS
+from app.services import analysis, geo, projects, stages
+from app.services.common import ServiceError
 from app.services.common import AppContext
 from app.services.report_html import render_report
 
@@ -46,6 +48,27 @@ def methodology(ctx: AppContext = Depends(get_ctx)):
     return projects.methodology(ctx)
 
 
+@router.get("/methodology/norms", tags=["reference"])
+def methodology_norms(object_type: str | None = Query(default=None), ctx: AppContext = Depends(get_ctx)):
+    """Справочник «тип объекта ↔ этап ↔ техника» (роль, количество, нормативы) — из таблиц БД."""
+    return stages.norms_matrix(ctx, object_type)
+
+
+@router.post("/methodology/calc", tags=["reference"])
+def methodology_calc(body: schemas.CalcIn, ctx: AppContext = Depends(get_ctx)):
+    """Расчёт количества техники по формулам METHODOLOGY.md: земляные работы, бетонирование, башенный кран."""
+    fn = CALCULATORS.get(body.kind)
+    if not fn:
+        raise ServiceError(422, f"Неизвестный расчёт: {body.kind}")
+    try:
+        params = {k: float(v) for k, v in (body.params or {}).items() if v not in (None, "")}
+        return fn(**params)
+    except TypeError as exc:
+        raise ServiceError(422, f"Неверные параметры расчёта: {exc}")
+    except ValueError as exc:
+        raise ServiceError(422, str(exc))
+
+
 @router.get("/catalog", tags=["reference"])
 def catalog(object_type: str | None = Query(default=None), ctx: AppContext = Depends(get_ctx)):
     return projects.catalog(ctx, object_type)
@@ -77,6 +100,13 @@ def update_project(project_id: int, body: schemas.ProjectPatch, user: int = Depe
 def delete_project(project_id: int, user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
     projects.delete_project(ctx, user, project_id)
     return Response(status_code=204)
+
+
+@router.post("/projects/{project_id}/geocode", tags=["projects"])
+def geocode_project(project_id: int, force: bool = Query(default=False), user: int = Depends(current_user),
+                    ctx: AppContext = Depends(get_ctx)):
+    """Координаты стройки по адресу для карты (Яндекс → Nominatim → справочник округов Москвы)."""
+    return geo.geocode_project(ctx, user, project_id, force)
 
 
 @router.get("/projects/{project_id}/overview", tags=["projects"])

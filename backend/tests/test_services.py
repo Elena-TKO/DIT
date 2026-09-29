@@ -202,65 +202,37 @@ class FlowTest(unittest.TestCase):
             self.assertEqual(e.exception.status, 404)
 
     # ------------------------------------------------------------------
-    def test_http_camera_and_emulator(self):
+    def test_camera_labels(self):
+        """Камера — метка точки съёмки: название, зона, объект. Снимки с камерой считаются по ней."""
         ctx = self.ctx
         uid = projects.register(ctx, "cams@site.ru", "secret123", "Камеры")["user"]["id"]
         pid = projects.create_project(ctx, uid, "Школа", "", "2025-01-01", "2026-06-30")["id"]
         bid = projects.create_building(ctx, uid, pid, "Школа на 1100 мест", "education")["id"]
-
-        # HTTP-камера: локальный сервер отдаёт реальный снимок
-        www = self.tmp / "www"
-        www.mkdir(exist_ok=True)
-        shutil.copy(self.images[0], www / "snapshot.png")
-        self.annotate(self.images[0], [])   # имя кадра другое, разметки нет
-        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(www))
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        try:
-            url = f"http://127.0.0.1:{server.server_address[1]}/snapshot.png"
-            with self.assertRaises(ServiceError):
-                cameras.create_camera(ctx, uid, pid, "Без объекта", source_type="http", url=url)
-            cam = cameras.create_camera(ctx, uid, pid, "Мачта", source_type="http", url=url, building_id=bid,
-                                        zone="Пятно застройки", interval_min=30, active=True)
-            self.assertEqual([c["id"] for c in cameras.due_cameras(ctx)], [cam["id"]])
-            result = cameras.poll_due(ctx)
-            self.assertEqual(result, {"polled": 1, "failed": 0})
-            self.assertEqual(cameras.due_cameras(ctx), [])            # следующий опрос через 30 мин
-            later = dt.datetime.now() + dt.timedelta(minutes=31)
-            self.assertEqual(len(cameras.due_cameras(ctx, later)), 1)
-            broken = cameras.create_camera(ctx, uid, pid, "Сломанная", source_type="http",
-                                           url=url.replace("snapshot", "missing"), building_id=bid, active=True)
-            self.assertEqual(cameras.poll_due(ctx)["failed"], 1)
-            self.assertTrue(cameras.get_camera(ctx, uid, broken["id"])["last_error"])
-        finally:
-            server.shutdown()
-
-        # Эмулятор: 3 кадра, шаг 30 минут условного времени
-        emu = cameras.create_camera(ctx, uid, pid, "Эмулятор", source_type="emulator", building_id=bid,
-                                    zone="Котлован", interval_min=30, tick_seconds=5,
-                                    emulator_start="2025-04-10T08:00")
+        with self.assertRaises(ServiceError) as e:
+            cameras.create_camera(ctx, uid, pid, "  ")
+        self.assertEqual(e.exception.status, 422)
+        cam = cameras.create_camera(ctx, uid, pid, "Мачта", zone="Котлован", building_id=bid)
         frames = self.images[6:9]
         for img in frames:
             self.annotate(img, [("pile_driver", (0.3, 0.1, 0.5, 0.9))])
-        up = cameras.upload_emulator_frames(ctx, uid, emu["id"], self.files(frames) + [("x.txt", b"no")])
-        self.assertEqual(up["saved"], 3)
-        self.assertEqual(len(up["errors"]), 1)
-        cameras.update_camera(ctx, uid, emu["id"], active=True)
-        taken = []
-        for _ in range(3):
-            taken.append(cameras.poll_now(ctx, uid, emu["id"])["taken_at"])
-        self.assertEqual(taken, ["2025-04-10T08:00:00", "2025-04-10T08:30:00", "2025-04-10T09:00:00"])
-        with self.assertRaises(ServiceError) as e:
-            cameras.poll_now(ctx, uid, emu["id"])
-        self.assertEqual(e.exception.status, 409)
-        self.assertFalse(cameras.get_camera(ctx, uid, emu["id"])["active"])   # остановился сам
-
+        up = photos.upload_photos(ctx, uid, bid, self.files(frames), camera_id=cam["id"],
+                                  start_at="2025-04-10T08:00", interval_min=30)
+        self.assertEqual(up["uploaded"], 3)
+        self.assertEqual([p["taken_at"] for p in up["photos"]],
+                         ["2025-04-10T08:00:00", "2025-04-10T08:30:00", "2025-04-10T09:00:00"])
         v = analysis.analyze(ctx, uid, bid, at="2025-04-10T09:10")["verdict"]
         self.assertIn("PILING", v["stage"]["resolved"])
-        cams = {c["name"]: c for c in cameras.list_cameras(ctx, uid, pid)}
-        self.assertEqual(cams["Эмулятор"]["photos_count"], 3)
-        cameras.reset_emulator(ctx, uid, emu["id"], "2025-04-11T08:00")
-        self.assertEqual(cameras.get_camera(ctx, uid, emu["id"])["emulator_cursor"], 0)
+        got = cameras.get_camera(ctx, uid, cam["id"])
+        self.assertEqual(got["photos_count"], 3)
+        self.assertEqual(got["last_photo_at"], "2025-04-10T09:00:00")
+        cameras.update_camera(ctx, uid, cam["id"], zone="Пятно застройки")
+        self.assertEqual(cameras.get_camera(ctx, uid, cam["id"])["zone"], "Пятно застройки")
+        cameras.delete_camera(ctx, uid, cam["id"])
+        self.assertEqual(cameras.list_cameras(ctx, uid, pid), [])
+        # снимки остаются, метка камеры снимается
+        left = photos.list_photos(ctx, uid, bid, 10, 0, None, None, None, None)
+        self.assertEqual(left["total"], 3)
+        self.assertTrue(all(p["camera_id"] is None for p in left["items"]))
 
 
 
@@ -337,17 +309,12 @@ class CleanupAndSecurityTest(unittest.TestCase):
         projects.delete_project(self.ctx, self.uid, self.pid)
         self.assertFalse((self.settings.photos_dir / str(bid2)).exists())
 
-    def test_camera_cannot_point_at_service_itself(self):
-        bid = projects.create_building(self.ctx, self.uid, self.pid, "Корпус", "housing")["id"]
-        for url in ("http://127.0.0.1:8000/api/health", "http://169.254.169.254/latest/meta-data/",
-                    "http://localhost/snapshot.jpg"):
-            with self.assertRaises(ServiceError, msg=url) as e:
-                cameras.create_camera(self.ctx, self.uid, self.pid, "SSRF", source_type="http",
-                                       url=url, building_id=bid)
-            self.assertEqual(e.exception.status, 422)
-        # камера в локальной сети стройки разрешена
-        cameras.check_camera_host("http://10.0.0.15/snapshot.jpg")
-        cameras.check_camera_host("http://192.168.1.50/img.jpg")
+    def test_camera_from_other_project_rejected(self):
+        other = projects.create_project(self.ctx, self.uid, "Другая", "", "2025-01-01", "2026-01-01")["id"]
+        bid = projects.create_building(self.ctx, self.uid, other, "Чужой корпус", "housing")["id"]
+        with self.assertRaises(ServiceError) as e:
+            cameras.create_camera(self.ctx, self.uid, self.pid, "Не туда", building_id=bid)
+        self.assertEqual(e.exception.status, 422)
 
     def test_password_policy(self):
         for weak in ("1234567", "12345678", "password", "8"):
@@ -529,3 +496,196 @@ class TrimBordersTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MapAndAssistantTest(unittest.TestCase):
+    """Карта строек (геокодирование без сети) и помощник по документации (бета)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp())
+        os.environ.update(DATA_DIR=str(cls.tmp / "data"), GEOCODER="off")
+        cls.ctx = AppContext(Settings(), MockDetector())
+        cls.uid = projects.register(cls.ctx, "map@site.ru", "secret123", "Карта")["user"]["id"]
+        os.environ.pop("GEOCODER", None)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_geocode_offline_and_manual_point(self):
+        from app.services import geo
+        ctx, uid = self.ctx, self.uid
+        pid = projects.create_project(ctx, uid, "ЖК", "Москва, Дмитровское ш., вл. 1", "2025-01-01", "2026-01-01")["id"]
+        found = geo.geocode_project(ctx, uid, pid)
+        self.assertEqual(found["geo_source"], "approx")
+        self.assertAlmostEqual(found["lat"], 55.87, places=1)
+        self.assertEqual(projects.list_projects(ctx, uid)[0]["lat"], found["lat"])
+        # аббревиатура округа — отдельным словом, не внутри слова
+        self.assertIsNotNone(geo.approximate("Москва, ЮЗАО, ул. Строителей"))
+        self.assertIsNone(geo.approximate("Москва, Сао-Паульская ул."))
+        unknown = projects.create_project(ctx, uid, "Без адреса", "", "2025-01-01", "2026-01-01")["id"]
+        self.assertFalse(geo.geocode_project(ctx, uid, unknown)["found"])
+        placed = projects.update_project(ctx, uid, unknown, lat=55.7, lon=37.6)
+        self.assertEqual(placed["geo_source"], "manual")
+        with self.assertRaises(ServiceError):
+            projects.update_project(ctx, uid, unknown, lat=95, lon=37.6)
+        # смена адреса сбрасывает точку — её определят заново
+        moved = projects.update_project(ctx, uid, pid, address="Москва, Варшавское ш., 10")
+        self.assertIsNone(moved["lat"])
+
+    def test_assistant_intents_and_documents(self):
+        from app.services import assistant
+        ctx, uid = self.ctx, self.uid
+        cases = {"Опиши текущий этап": "stage", "Почему возник простой?": "idle",
+                 "не хватает эскаваторов, кому звонить?": "contacts", "Сколько стоит смена автокрана": "rates"}
+        for q, intent in cases.items():
+            self.assertEqual(assistant.compose_answer(ctx, uid, q)["intent"], intent, q)
+        contacts = assistant.compose_answer(ctx, uid, "не хватает экскаваторов кому звонить")
+        self.assertIn("Иванов Иван Иванович", contacts["text"])
+        self.assertTrue(contacts["sources"])
+        with self.assertRaises(ServiceError):
+            assistant.compose_answer(ctx, uid, "   ")
+        # текущий этап по реальной стройке пользователя
+        pid = projects.create_project(ctx, uid, "Школа", "", "2025-01-01", "2026-06-30")["id"]
+        projects.create_building(ctx, uid, pid, "Корпус А", "education")
+        stage = assistant.compose_answer(ctx, uid, "Опиши текущий этап", pid)
+        self.assertEqual(stage["project"], "Школа")
+        self.assertIn("Корпус А", stage["text"])
+        # загруженный документ находится поиском, чужой пользователь его не видит
+        doc = assistant.add_document(ctx, uid, "регламент.txt", "Ответственный за генераторы — Петров П. П.".encode())
+        self.assertIn("Петров", assistant.compose_answer(ctx, uid, "кто отвечает за генераторы")["text"])
+        other = projects.register(ctx, "other@site.ru", "secret123", "Другой")["user"]["id"]
+        self.assertNotIn("Петров", assistant.compose_answer(ctx, other, "кто отвечает за генераторы")["text"])
+        with self.assertRaises(ServiceError):
+            assistant.delete_document(ctx, other, doc["id"])
+        self.assertTrue(all(d["builtin"] for d in assistant.list_documents(ctx, other)))
+        assistant.delete_document(ctx, uid, doc["id"])
+        lines = list(assistant.stream_answer(ctx, uid, "почему простой"))
+        self.assertEqual([json.loads(lines[0])["type"], json.loads(lines[-1])["type"]], ["meta", "done"])
+
+
+class _CountingDetector:
+    """Детектор для тестов этапов: разметка задаётся по имени файла (``exc2_dump4.png``)."""
+    name = "fake"
+    CODES = {"exc": "excavator", "dump": "dump_truck", "pile": "pile_driver", "mix": "concrete_mixer",
+             "pump": "concrete_pump", "tower": "tower_crane"}
+
+    def detect(self, path):
+        from app.core.types import Detection
+        out = []
+        stem = Path(path).stem.split("__", 1)[-1]
+        for part in stem.split("_"):
+            code = part.rstrip("0123456789")
+            n = int(part[len(code):] or 1)
+            for i in range(n):
+                if code in self.CODES:
+                    x = 0.05 + 0.09 * i
+                    out.append(Detection(cls=self.CODES[code], confidence=0.9, bbox=(x, 0.4, x + 0.08, 0.6)))
+        return out
+
+    def info(self):
+        return {"backend": self.name}
+
+
+class StagesTest(unittest.TestCase):
+    """Этап у каждого снимка, загрузка на этап, план ↔ факт, справочник и расчёты техники."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp())
+        os.environ.update(DATA_DIR=str(cls.tmp / "data"))
+        cls.ctx = AppContext(Settings(), _CountingDetector())
+        cls.uid = projects.register(cls.ctx, "stage@site.ru", "secret123", "Этапы")["user"]["id"]
+        cls.pid = projects.create_project(cls.ctx, cls.uid, "ЖК", "", "2025-01-15", "2027-03-31")["id"]
+        cls.bid = projects.create_building(cls.ctx, cls.uid, cls.pid, "Корпус 1", "housing")["id"]
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def png(self, name: str, shade: int) -> tuple[str, bytes]:
+        path = self.tmp / name
+        Image.new("RGB", (320, 200), (shade, 90, 70)).save(path)
+        return name, path.read_bytes()
+
+    def test_auto_stage_manual_stage_and_plan_sync(self):
+        from app.services import stages
+        ctx, uid, bid = self.ctx, self.uid, self.bid
+        plan = projects.get_plan(ctx, uid, bid)
+        exc = next(p for p in plan["phases"] if p["phase"] == "EXCAVATION")
+        # экскаватор + 4 самосвала в сроки котлована → этап «котлован» определяется сам, сразу после загрузки
+        up = photos.upload_photos(ctx, uid, bid, [self.png("exc1_dump4.png", 10)], start_at=exc["start"] + "T09:00")
+        self.assertEqual(up["photos"][0]["phase"], "EXCAVATION")
+        self.assertEqual(up["photos"][0]["phase_source"], "auto")
+        self.assertTrue(up["photos"][0]["phase_confirmed"])
+        # количество решает при одинаковом наборе: один экскаватор и один самосвал вне сроков котлована
+        # по нормам ближе к наружным сетям/выносу сетей, чем к котловану (самосвалов меньше минимума)
+        from app.core.norms import quantity_fit, requirements
+        few = {"excavator": 1, "dump_truck": 1}
+        self.assertGreater(quantity_fit(few, requirements(ctx.m, ctx.norms, "housing", "EXT_NETWORKS")),
+                           quantity_fit(few, requirements(ctx.m, ctx.norms, "housing", "EXCAVATION")))
+        # загрузка на конкретный этап: несколько снимков на один этап, этап не перезаписывается автоматикой
+        pil = next(p for p in plan["phases"] if p["phase"] == "PILING")
+        up2 = photos.upload_photos(ctx, uid, bid, [self.png("pile1.png", 20), self.png("exc1.png", 30)],
+                                   start_at=pil["start"] + "T10:00", phase="PILING")
+        self.assertEqual([p["phase"] for p in up2["photos"]], ["PILING", "PILING"])
+        self.assertEqual({p["phase_source"] for p in up2["photos"]}, {"manual"})
+        self.assertNotEqual(up2["photos"][1]["auto_phase"], "PILING")      # по технике — не сваи
+        with self.assertRaises(ServiceError):
+            photos.upload_photos(ctx, uid, bid, [self.png("x.png", 40)], phase="NOPE")
+
+        summary = stages.stage_list(ctx, uid, bid)
+        by = {s["phase"]: s for s in summary["stages"]}
+        self.assertEqual(by["EXCAVATION"]["photos"], 1)
+        self.assertEqual(by["PILING"]["photos"], 2)
+        self.assertEqual(by["PILING"]["photo_start"], pil["start"])
+        self.assertTrue(by["PILING"]["photo_days"])
+        self.assertTrue(by["EXCAVATION"]["tasks"])
+        self.assertTrue(all(t["equipment"] for t in by["EXCAVATION"]["tasks"]))
+        self.assertEqual(by["FOUNDATION"]["photos"], 0)
+
+        detail = stages.stage_detail(ctx, uid, bid, "PILING")
+        self.assertEqual(len(detail["photos"]), 2)
+        self.assertTrue(detail["docs"])
+        self.assertTrue(any(p["mismatch"] for p in detail["photos"]))
+        required = [c for c in detail["check"] if c["role"] == "required"]
+        self.assertEqual(required[0]["state"], "ok")                          # буровая установка есть
+        # перенос снимка на другой этап и возврат к автоопределению
+        moved = photos.set_photo_phase(ctx, uid, up2["photo_ids"][1], "EXCAVATION")
+        self.assertEqual((moved["phase"], moved["phase_source"]), ("EXCAVATION", "manual"))
+        back = photos.set_photo_phase(ctx, uid, up2["photo_ids"][1], "")
+        self.assertEqual(back["phase_source"], "auto")
+        # фильтр галереи по этапу
+        self.assertEqual(photos.list_photos(ctx, uid, bid, 50, 0, phase="PILING")["total"], 1)
+
+    def test_reference_tables_link_type_phase_equipment(self):
+        from app.services import stages
+        rows = self.ctx.db.all(
+            "SELECT pe.min_count, pe.max_count FROM phase_equipment pe "
+            "WHERE pe.object_type = 'housing' AND pe.phase_id = 'EXCAVATION' AND pe.cls = 'dump_truck'")
+        self.assertEqual(rows, [{"min_count": 2, "max_count": 8}])
+        roads = stages.norms_matrix(self.ctx, "roads")["object_types"][0]
+        self.assertIn("ROAD_WORKS", [p["phase"] for p in roads["phases"]])
+        frame = next(p for p in roads["phases"] if p["phase"] == "FRAME")
+        self.assertNotIn("tower_crane", [e["cls"] for e in frame["equipment"]])   # на дороге башенный кран не ставят
+        housing = stages.norms_matrix(self.ctx, "housing")["object_types"][0]
+        self.assertNotIn("ROAD_WORKS", [p["phase"] for p in housing["phases"]])
+        self.assertTrue(all(p["docs"] for p in housing["phases"] if p["phase"] != "ORGANIZATION"))
+        with self.assertRaises(ServiceError):
+            stages.norms_matrix(self.ctx, "spaceport")
+
+    def test_equipment_calculations(self):
+        from app.core.norms import calc_concreting, calc_excavation, calc_tower_crane
+        ex = calc_excavation(volume_m3=20000, days=20)
+        self.assertEqual(ex["result"]["excavator"], 2)          # 20 000 / (810 м³/смену · 20) → 2
+        self.assertEqual(ex["result"]["dump_truck"], 18)        # 9 самосвалов на экскаватор при плече 10 км
+        near = calc_excavation(volume_m3=20000, days=20, distance_km=2)
+        self.assertLess(near["result"]["dump_truck"], ex["result"]["dump_truck"])
+        con = calc_concreting(volume_m3=480, hours=16)
+        self.assertEqual(con["result"], {"concrete_pump": 1, "concrete_mixer": 6})
+        cr = calc_tower_crane(building_height_m=75, building_width_m=18, building_length_m=120)
+        self.assertEqual(cr["result"]["hook_height_m"], 83.0)
+        self.assertGreaterEqual(cr["result"]["tower_crane"], 2)
+        with self.assertRaises(ValueError):
+            calc_excavation(volume_m3=0, days=5)

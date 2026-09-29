@@ -14,7 +14,7 @@ const VOID = new Set(['input', 'img', 'br', 'hr', 'meta', 'link', 'source', 'col
 const TEMPLATE_GLOBALS = new Set(('Infinity,undefined,NaN,isFinite,isNaN,parseFloat,parseInt,decodeURI,' +
   'decodeURIComponent,encodeURI,encodeURIComponent,Math,Number,Date,Array,Object,Boolean,String,RegExp,Map,Set,' +
   'JSON,Intl,BigInt,console,Error,$event,$attrs,$slots,$props,$emit,true,false,null,this').split(','))
-const GLOBAL_COMPONENTS = new Set(['RouterLink', 'RouterView'])
+const GLOBAL_COMPONENTS = new Set(['RouterLink', 'RouterView', 'Teleport', 'Transition', 'TransitionGroup', 'KeepAlive'])
 const KNOWN_ATTRS = new Set(['class', 'style', 'key', 'ref', 'id', 'title'])
 const errors = []
 
@@ -83,6 +83,7 @@ function analyzeScript(file, code) {
           named.push((el.propertyName || el.name).text)
         }
       }
+      if (clause?.namedBindings && ts.isNamespaceImport(clause.namedBindings)) bindings.add(clause.namedBindings.name.text)
       imports.push({ from, named, defaultName: clause?.name?.text })
     } else if (ts.isVariableStatement(st)) {
       for (const d of st.declarationList.declarations) bindingNames(d.name, bindings)
@@ -149,7 +150,8 @@ function freeIdentifiers(root, initialScope) {
         (ts.isBindingElement(parent) && parent.name === node) ||
         (ts.isFunctionDeclaration(parent) && parent.name === node) ||
         (ts.isParameter(parent) && parent.name === node) ||
-        ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isLabeledStatement(parent) ||
+        ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent) ||
+        ts.isMetaProperty(parent) || ts.isLabeledStatement(parent) ||
         ts.isBreakOrContinueStatement(parent))
       if (!isPropName && !scope.has(node.text)) found.add(node.text)
       return

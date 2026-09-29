@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { api, imageUrl } from '../api.js'
 import { formatDateTime, toLocalInput } from '../lib/format.js'
@@ -91,7 +91,7 @@ onBeforeUnmount(() => { alive = false; clearPreview() })
     <p v-if="loading" class="review-notice" role="status">Загружаем снимки…</p>
     <div class="review-top">
       <section class="photo-surface">
-        <div class="surface-head"><span>{{ preview ? 'НОВЫЙ СНИМОК' : photo?.camera_name || 'СНИМОК ОБЪЕКТА' }}</span><button v-if="photo || preview" class="text-action" :disabled="busy" @click="fileInput.click()">Заменить фото</button></div>
+        <div class="surface-head"><span>{{ preview ? 'НОВЫЙ СНИМОК' : photo?.camera_name || 'СНИМОК ОБЪЕКТА' }}<RouterLink v-if="photo?.phase && !preview" :to="`/buildings/${building.id}/stages/${photo.phase}`" class="review-stage-link">Этап: {{ photo.phase_source === 'auto' && !photo.phase_confirmed ? '≈ ' : '' }}{{ photo.phase_name }} →</RouterLink></span><button v-if="photo || preview" class="text-action" :disabled="busy" @click="fileInput.click()">Заменить фото</button></div>
         <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/bmp" hidden @change="pick" />
         <div v-if="photo || preview" class="review-image"><img :src="preview || imageUrl(photo.id, 1400)" alt="Снимок строительной площадки" /><div v-for="(d,i) in detections" :key="d.id || i" class="detection-frame" :class="d.activity || 'unknown'" :style="{ left:d.bbox[0]*100+'%', top:d.bbox[1]*100+'%', width:(d.bbox[2]-d.bbox[0])*100+'%', height:(d.bbox[3]-d.bbox[1])*100+'%' }"><span>{{ d.label || d.cls }} · {{ ACTIVITY[d.activity] || 'обнаружено' }} {{ Math.round(d.confidence*100) }}%</span></div></div>
         <div v-else class="photo-drop" @dragover.prevent @drop.prevent="pick"><Icon name="upload" /><h3>Фото ещё не загружено</h3><p>Добавьте снимок с камеры, чтобы получить<br />анализ техники и отклонений</p><button class="btn primary" :disabled="busy || loading" @click="fileInput.click()">Загрузить фото</button></div>
@@ -105,3 +105,8 @@ onBeforeUnmount(() => { alive = false; clearPreview() })
     <div v-if="observed" class="review-next"><span>Следующий шаг — сопоставить результат с календарным планом</span><RouterLink :to="`/buildings/${building.id}/plan`" class="btn primary">К анализу с таблицей →</RouterLink></div>
   </section>
 </template>
+
+<style>
+.review-stage-link { margin-left: 12px; color: #356df3; text-decoration: none; text-transform: none; font-weight: 600; }
+.design-classic .review-stage-link { color: var(--accent); }
+</style>

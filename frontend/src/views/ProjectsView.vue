@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, reportUrl } from '../api.js'
@@ -6,6 +6,7 @@ import { refreshNav, ui } from '../store.js'
 import { formatDate, countLabel } from '../lib/format.js'
 import { projectSummary } from '../lib/project-summary.js'
 import Icon from '../components/Icon.vue'
+import ProjectsMap from '../components/ProjectsMap.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -119,6 +120,7 @@ onBeforeUnmount(() => { generation++ })
         </article>
       </li>
     </ul>
+    <ProjectsMap v-if="!loading && !error && projects.length" :projects="projects" :summaries="summaries" />
     <dialog ref="dialog" class="new-construction" aria-labelledby="new-title" aria-describedby="new-description" @cancel.prevent="closeForm" @click="backdrop">
       <form @submit.prevent="create" :aria-busy="busy">
         <button class="modal-close" type="button" aria-label="Закрыть" :disabled="busy" @click="closeForm"><Icon name="close" /></button>

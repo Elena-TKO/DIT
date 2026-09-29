@@ -213,20 +213,17 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(blocking, [])
         self.assertEqual(v["stage"]["top_phase"], "EXCAVATION")
 
-    def test_idle_and_silent_camera(self):
+    def test_idle_equipment(self):
         box = (0.4, 0.4, 0.6, 0.6)
         frames = [PhotoObs(i, self.at - dt.timedelta(minutes=30 * (3 - i)), 7, "Юг", "Въезд",
                            [det("dump_truck", box), det("excavator", (0.1 * i, 0.1, 0.1 * i + 0.1, 0.2))])
                   for i in range(4)]
         assign_activity(frames, M)
-        cams = [{"id": 9, "name": "Кран", "zone": "Кран", "active": True, "source_type": "http",
-                 "interval_min": 30, "last_photo_at": self.at - dt.timedelta(hours=5)}]
-        v = build_verdict(M, self.at, self.tasks, frames, cams)
+        v = build_verdict(M, self.at, self.tasks, frames)
         idle = [d for d in v["deviations"] if d["kind"] == "IDLE_EQUIPMENT"]
         self.assertEqual(len(idle), 1)
         self.assertEqual(idle[0]["equipment"], ["dump_truck"])
         self.assertEqual(idle[0]["severity"], "warning")
-        self.assertTrue(any(d["kind"] == "CAMERA_SILENT" for d in v["deviations"]))
         self.assertTrue(recommendations(M, v, {"rows": []}))
 
 

@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from app import schemas
 from app.api.deps import current_user, get_ctx
-from app.services import analysis, cameras, photos
+from app.services import analysis, cameras, photos, stages
 from app.services.common import AppContext, ServiceError
 
 router = APIRouter(prefix="/api")
@@ -30,17 +30,20 @@ def _read(files: list[UploadFile]) -> list[tuple[str, bytes]]:
 @router.post("/buildings/{building_id}/photos", tags=["photos"], status_code=201)
 def upload_photos(building_id: int, files: list[UploadFile] = File(...), camera_id: str | None = Form(default=None),
                   start_at: str | None = Form(default=None), interval_min: int = Form(default=30),
+                  phase: str | None = Form(default=None),
                   user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
+    """Загрузка снимков; ``phase`` — на конкретный этап, иначе этап определяется по технике на кадре."""
     cam = int(camera_id) if camera_id and camera_id.strip().isdigit() else None
-    return photos.upload_photos(ctx, user, building_id, _read(files), cam, start_at, interval_min)
+    return photos.upload_photos(ctx, user, building_id, _read(files), cam, start_at, interval_min, phase)
 
 
 @router.get("/buildings/{building_id}/photos", tags=["photos"])
 def list_photos(building_id: int, limit: int = Query(default=200), offset: int = Query(default=0),
                 camera_id: int | None = Query(default=None), taken_from: str | None = Query(default=None),
                 taken_to: str | None = Query(default=None), cls: str | None = Query(default=None),
+                phase: str | None = Query(default=None),
                 user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
-    return photos.list_photos(ctx, user, building_id, limit, offset, camera_id, taken_from, taken_to, cls)
+    return photos.list_photos(ctx, user, building_id, limit, offset, camera_id, taken_from, taken_to, cls, phase)
 
 
 @router.get("/photos/{photo_id}", tags=["photos"])
@@ -53,6 +56,13 @@ def photo_image(photo_id: int, w: int | None = Query(default=None), user: int = 
                 ctx: AppContext = Depends(get_ctx)):
     path, mime = photos.image_file(ctx, user, photo_id, w)
     return FileResponse(path, media_type=mime, headers={"Cache-Control": "private, max-age=86400"})
+
+
+@router.patch("/photos/{photo_id}", tags=["photos"])
+def update_photo(photo_id: int, body: schemas.PhotoPatch, user: int = Depends(current_user),
+                 ctx: AppContext = Depends(get_ctx)):
+    """Привязать снимок к этапу вручную (или вернуть автоопределение пустым значением)."""
+    return photos.set_photo_phase(ctx, user, photo_id, body.phase)
 
 
 @router.put("/photos/{photo_id}/detections", tags=["photos"])
@@ -70,6 +80,19 @@ def redetect(photo_id: int, user: int = Depends(current_user), ctx: AppContext =
 def delete_photo(photo_id: int, user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
     photos.delete_photo(ctx, user, photo_id)
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------- этапы
+@router.get("/buildings/{building_id}/stages", tags=["stages"])
+def list_stages(building_id: int, user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
+    """Этапы объекта: план, факт по снимкам, статус, нужная техника и подпункты работ."""
+    return stages.stage_list(ctx, user, building_id)
+
+
+@router.get("/buildings/{building_id}/stages/{phase}", tags=["stages"])
+def get_stage(building_id: int, phase: str, user: int = Depends(current_user), ctx: AppContext = Depends(get_ctx)):
+    """Страница этапа: все снимки этапа и результаты их анализа."""
+    return stages.stage_detail(ctx, user, building_id, phase)
 
 
 # ---------------------------------------------------------------- анализ

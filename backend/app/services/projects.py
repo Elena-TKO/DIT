@@ -139,12 +139,24 @@ def get_project(ctx: AppContext, user_id: int, project_id: int) -> dict:
 
 
 def update_project(ctx: AppContext, user_id: int, project_id: int, **fields) -> dict:
+    from .geo import check_point
+
     project = require_project(ctx, user_id, project_id)
     data = {k: v for k, v in fields.items() if v is not None and k in ("name", "address", "start_date", "end_date")}
     merged = {**project, **data}
+    if not (merged["name"] or "").strip():
+        raise ServiceError(422, "Укажите название стройки")
+    merged["address"] = (merged["address"] or "").strip()
     merged["start_date"], merged["end_date"] = _check_period(merged["start_date"], merged["end_date"])
-    ctx.db.execute("UPDATE projects SET name=?, address=?, start_date=?, end_date=? WHERE id=?",
-                   (merged["name"], merged["address"], merged["start_date"], merged["end_date"], project_id))
+    lat, lon, source = project.get("lat"), project.get("lon"), project.get("geo_source")
+    if fields.get("lat") is not None or fields.get("lon") is not None:
+        lat, lon = check_point(fields.get("lat"), fields.get("lon"))
+        source = "manual"
+    elif merged["address"] != project["address"]:
+        lat = lon = source = None          # адрес сменился — точку определим заново
+    ctx.db.execute("UPDATE projects SET name=?, address=?, start_date=?, end_date=?, lat=?, lon=?, geo_source=? "
+                   "WHERE id=?", (merged["name"].strip(), merged["address"], merged["start_date"], merged["end_date"],
+                                  lat, lon, source, project_id))
     return get_project(ctx, user_id, project_id)
 
 

@@ -29,6 +29,13 @@ class Settings:
     cors_origins: list[str] = field(default_factory=lambda: [o.strip() for o in _env(
         "CORS_ORIGINS", "http://localhost:5173,http://localhost:8080").split(",") if o.strip()])
     max_upload_mb: int = field(default_factory=lambda: int(_env("MAX_UPLOAD_MB", "25")))
+    # Карта строек: auto — Яндекс (если есть ключ), затем Nominatim, затем встроенный справочник; off — только справочник
+    geocoder: str = field(default_factory=lambda: _env("GEOCODER", "auto"))
+    yandex_geocoder_key: str = field(default_factory=lambda: _env("YANDEX_GEOCODER_KEY", ""))
+    nominatim_url: str = field(default_factory=lambda: _env("NOMINATIM_URL", "https://nominatim.openstreetmap.org"))
+    geocoder_timeout: float = field(default_factory=lambda: float(_env("GEOCODER_TIMEOUT", "4")))
+    # Помощник (бета): задержка между фрагментами ответа при потоковой выдаче, секунды
+    assistant_stream_delay: float = field(default_factory=lambda: float(_env("ASSISTANT_STREAM_DELAY", "0.025")))
 
     def __post_init__(self):
         self.data_dir.mkdir(parents=True, exist_ok=True)

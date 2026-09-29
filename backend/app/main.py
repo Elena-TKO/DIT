@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import routes_core, routes_media
+from app.api import routes_assistant, routes_core, routes_media
 from app.config import Settings
 from app.services.common import AppContext, ServiceError
 
@@ -52,6 +52,7 @@ def create_app(settings: Settings | None = None, detector=None) -> FastAPI:
 
     app.include_router(routes_core.router)
     app.include_router(routes_media.router)
+    app.include_router(routes_assistant.router)
 
     # Собранный фронтенд можно отдавать самим бэкендом (одним контейнером)
     dist = Path(os.environ.get("FRONTEND_DIST", Path(__file__).resolve().parents[2] / "frontend" / "dist"))

@@ -123,7 +123,7 @@ class RouteGlueTest(ApiBase):
             for name, p in params.items():
                 if name in path_params:
                     self.assertIs(p.default, inspect.Parameter.empty, f"{path}:{name}")
-                    expected = "str" if name == "token" else "int"   # идентификаторы — числа, ссылка — строка
+                    expected = "str" if name in ("token", "phase") else "int"   # id — числа; ссылка и код этапа — строки
                     self.assertEqual(p.annotation, expected, f"{path}:{name} должен быть {expected}")
                 elif p.default is inspect.Parameter.empty:
                     bodies.append(name)
@@ -172,19 +172,16 @@ class RouteGlueTest(ApiBase):
         call("PATCH", "/api/buildings/{building_id}", user=uid, building_id=bid,
              body=schemas.BuildingPatch(end_date="2027-01-31", reschedule=True))
         cam = call("POST", "/api/projects/{project_id}/cameras", user=uid, project_id=pid,
-                   body=schemas.CameraIn(name="Эмулятор", source_type="emulator", building_id=bid,
-                                         emulator_start="2025-05-01T08:00"))
-        call("POST", "/api/cameras/{camera_id}/frames", user=uid, camera_id=cam["id"],
-             files=[UploadFile("site.png", self.image)])
-        call("PATCH", "/api/cameras/{camera_id}", user=uid, camera_id=cam["id"], body=schemas.CameraPatch(active=True))
-        polled = call("POST", "/api/cameras/{camera_id}/poll", user=uid, camera_id=cam["id"])
-        self.assertEqual(polled["taken_at"], "2025-05-01T08:00:00")
+                   body=schemas.CameraIn(name="Мачта", zone="Котлован", building_id=bid))
+        cam = call("PATCH", "/api/cameras/{camera_id}", user=uid, camera_id=cam["id"],
+                   body=schemas.CameraPatch(zone="Пятно застройки"))
+        self.assertEqual(cam["zone"], "Пятно застройки")
         up = call("POST", "/api/buildings/{building_id}/photos", user=uid, building_id=bid,
                   files=[UploadFile("site.png", self.image)], camera_id=str(cam["id"]),
-                  start_at="2025-05-01T08:30", interval_min=30)
+                  start_at="2025-05-01T08:30", interval_min=30, phase=None)
         self.assertEqual(up["uploaded"], 1, up["errors"])
         up2 = call("POST", "/api/buildings/{building_id}/photos", user=uid, building_id=bid,
-                   files=[UploadFile("site.png", self.image)], camera_id="", start_at=None, interval_min=30)
+                   files=[UploadFile("site.png", self.image)], camera_id="", start_at=None, interval_min=30, phase=None)
         self.assertEqual(up2["uploaded"], 1)
         photo_id = up["photo_ids"][0]
         detail = call("GET", "/api/photos/{photo_id}", user=uid, photo_id=photo_id)
@@ -205,8 +202,6 @@ class RouteGlueTest(ApiBase):
         self.assertEqual(len(ov["buildings"]), 1)
         rep = call("GET", "/api/projects/{project_id}/report.html", user=uid, project_id=pid, at=None)
         self.assertIn("Рекомендации по установке камер", rep.body)
-        call("POST", "/api/cameras/{camera_id}/reset", user=uid, camera_id=cam["id"],
-             body=schemas.EmulatorResetIn(start_at="2025-06-01T08:00"))
         self.assertEqual(call("GET", "/api/health")["catalog_items"], 377)
         link = call("POST", "/api/projects/{project_id}/report-link", user=uid, project_id=pid, ttl_hours=24)
         public = call("GET", "/api/public/report/{token}", token=link["token"])
@@ -215,6 +210,38 @@ class RouteGlueTest(ApiBase):
         self.assertIn("Важность", csv_text.body)
         self.assertIn("Открыть интерфейс", R[("GET", "/")]["endpoint"]().body)
         self.assertEqual(len(call("GET", "/api/catalog", object_type="roads")), 2)
+        # этапы: сводка план/факт, страница этапа, ручная привязка снимка, справочник и расчёт
+        st = call("GET", "/api/buildings/{building_id}/stages", user=uid, building_id=bid)
+        self.assertTrue(st["stages"])
+        ph = st["stages"][0]["phase"]
+        self.assertEqual(call("GET", "/api/buildings/{building_id}/stages/{phase}", user=uid, building_id=bid,
+                              phase=ph)["phase"], ph)
+        moved = call("PATCH", "/api/photos/{photo_id}", user=uid, photo_id=photo_id,
+                     body=schemas.PhotoPatch(phase=ph))
+        self.assertEqual(moved["phase_source"], "manual")
+        self.assertTrue(call("GET", "/api/methodology/norms", object_type="housing")["object_types"][0]["phases"])
+        calc = call("POST", "/api/methodology/calc", body=schemas.CalcIn(kind="concreting",
+                                                                     params={"volume_m3": 100, "hours": 8}))
+        self.assertIn("concrete_mixer", calc["result"])
+        # карта: ручная точка и повторное геокодирование её не перетирает
+        placed = call("PATCH", "/api/projects/{project_id}", user=uid, project_id=pid,
+                      body=schemas.ProjectPatch(lat=55.75, lon=37.61))
+        self.assertEqual((placed["lat"], placed["geo_source"]), (55.75, "manual"))
+        self.assertEqual(call("POST", "/api/projects/{project_id}/geocode", user=uid, project_id=pid,
+                              force=False)["geo_source"], "manual")
+        # помощник: поток NDJSON собирается в ответ с источниками
+        import json as _json
+        stream = call("POST", "/api/assistant/chat", user=uid,
+                      body=schemas.AssistantIn(question="Контакты ответственных за экскаваторы", project_id=pid))
+        events = [_json.loads(line) for line in stream.body]
+        self.assertEqual(events[0]["type"], "meta")
+        self.assertEqual(events[-1]["type"], "done")
+        self.assertIn("Иванов", "".join(e.get("text", "") for e in events))
+        doc = call("POST", "/api/assistant/documents", user=uid,
+                   file=UploadFile("регламент.txt", "Ответственный за генераторы — Петров П. П.".encode()))
+        self.assertTrue(any(d["id"] == doc["id"] for d in call("GET", "/api/assistant/documents", user=uid)))
+        self.assertEqual(call("DELETE", "/api/assistant/documents/{doc_id}", user=uid,
+                              doc_id=doc["id"]).status_code, 204)
         for method, path, kw in [("DELETE", "/api/photos/{photo_id}", {"photo_id": photo_id}),
                                  ("DELETE", "/api/cameras/{camera_id}", {"camera_id": cam["id"]}),
                                  ("DELETE", "/api/buildings/{building_id}", {"building_id": bid}),

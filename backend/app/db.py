@@ -9,6 +9,9 @@
   3 — целостность данных: статус детекции, источник времени, хеш снимка, версии методики и модели,
       жизненный цикл отклонений
   4 — камера — просто метка для группировки снимков (без опроса адресов и эмулятора)
+  5 — координаты стройки для карты (lat, lon, geo_source) и документы базы знаний помощника
+  6 — этап у каждого снимка (phase, phase_source, auto_phase, phase_score) и справочные таблицы
+      «тип объекта ↔ этап ↔ техника» (заполняются из методики и norms.json при старте, см. core/reference.py)
 """
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 # Актуальная схема для новых баз. Индексы по колонкам, добавленным миграциями, здесь не создаются:
 # у старых баз этих колонок на момент executescript ещё нет. Их создаёт _migrate.
@@ -37,7 +40,10 @@ CREATE TABLE IF NOT EXISTS projects (
     address    TEXT NOT NULL DEFAULT '',
     start_date TEXT NOT NULL,
     end_date   TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    lat        REAL,                                   -- v5: координаты для карты
+    lon        REAL,
+    geo_source TEXT                                    -- v5: yandex | nominatim | approx | manual
 );
 CREATE INDEX IF NOT EXISTS ix_projects_owner ON projects (owner_id);
 
@@ -99,7 +105,13 @@ CREATE TABLE IF NOT EXISTS photos (
     time_source   TEXT NOT NULL DEFAULT 'synthetic',   -- exif | camera | synthetic
     detect_status TEXT NOT NULL DEFAULT 'done',        -- pending | done | failed | skipped
     model_version TEXT NOT NULL DEFAULT '',            -- хеш весов + конфиг детектора
-    content_hash  TEXT                                 -- sha256 содержимого, для дедупликации
+    content_hash  TEXT,                                -- sha256 содержимого, для дедупликации
+    -- v6: этап работ, к которому относится снимок
+    phase         TEXT,                                -- действующий этап (авто или выбран пользователем)
+    phase_source  TEXT,                                -- auto | manual; NULL — ещё не определялся
+    auto_phase    TEXT,                                -- этап по технике на кадре (для сверки с ручным)
+    phase_score   REAL,                                -- балл автоопределения 0..1
+    phase_confirmed INTEGER NOT NULL DEFAULT 0         -- 1 — вся обязательная техника этапа на кадре
 );
 CREATE INDEX IF NOT EXISTS ix_photos_building_time ON photos (building_id, taken_at);
 CREATE INDEX IF NOT EXISTS ix_photos_camera_time ON photos (camera_id, taken_at);
@@ -150,6 +162,55 @@ CREATE TABLE IF NOT EXISTS deviations (
     resolved_at TEXT                                   -- v3: когда исчезло (NULL — ещё актуально)
 );
 CREATE INDEX IF NOT EXISTS ix_deviations_building ON deviations (building_id, at);
+
+-- v5: документы, добавленные пользователем в базу знаний помощника (бета, поиск по ключевым словам)
+CREATE TABLE IF NOT EXISTS assistant_documents (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    size       INTEGER NOT NULL DEFAULT 0,
+    content    TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_assistant_docs_owner ON assistant_documents (owner_id);
+
+-- v6: справочник «тип объекта ↔ этап ↔ техника». Источник истины — methodology.json и norms.json,
+-- таблицы пересобираются при старте, чтобы связь была доступна SQL-запросами и внешним системам.
+CREATE TABLE IF NOT EXISTS object_types (
+    key   TEXT PRIMARY KEY,
+    title TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS work_phases (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    sequence      INTEGER NOT NULL,
+    observability TEXT NOT NULL,                       -- high | medium | low | none — видно ли камерами
+    hint          TEXT NOT NULL DEFAULT '',
+    rule          TEXT NOT NULL DEFAULT '',            -- правило подбора техники (norms.json)
+    docs          TEXT NOT NULL DEFAULT '[]'           -- нормативные документы, JSON-массив
+);
+CREATE TABLE IF NOT EXISTS equipment_types (
+    cls        TEXT PRIMARY KEY,
+    label      TEXT NOT NULL,
+    shift_rate INTEGER                                  -- ставка аренды с оператором за смену, ₽
+);
+CREATE TABLE IF NOT EXISTS object_type_phases (
+    object_type TEXT NOT NULL REFERENCES object_types(key) ON DELETE CASCADE,
+    phase_id    TEXT NOT NULL REFERENCES work_phases(id) ON DELETE CASCADE,
+    tasks       INTEGER NOT NULL DEFAULT 0,            -- сколько работ справочника относится к этапу
+    PRIMARY KEY (object_type, phase_id)
+);
+CREATE TABLE IF NOT EXISTS phase_equipment (
+    object_type TEXT NOT NULL REFERENCES object_types(key) ON DELETE CASCADE,
+    phase_id    TEXT NOT NULL REFERENCES work_phases(id) ON DELETE CASCADE,
+    cls         TEXT NOT NULL REFERENCES equipment_types(cls) ON DELETE CASCADE,
+    role        TEXT NOT NULL,                         -- required | typical | unexpected
+    alt_group   INTEGER,                               -- номер группы «или» для обязательной техники
+    min_count   INTEGER NOT NULL DEFAULT 0,
+    max_count   INTEGER,
+    PRIMARY KEY (object_type, phase_id, cls)
+);
+CREATE INDEX IF NOT EXISTS ix_phase_equipment_phase ON phase_equipment (phase_id, cls);
 """
 
 
@@ -275,6 +336,18 @@ class Database:
             conn.execute("DELETE FROM verdicts WHERE id NOT IN "
                          "(SELECT MAX(id) FROM verdicts GROUP BY building_id, at)")
 
+        if version < 5:
+            _add_column(conn, "projects", "lat", "REAL")
+            _add_column(conn, "projects", "lon", "REAL")
+            _add_column(conn, "projects", "geo_source", "TEXT")
+
+        if version < 6:
+            _add_column(conn, "photos", "phase", "TEXT")
+            _add_column(conn, "photos", "phase_source", "TEXT")
+            _add_column(conn, "photos", "auto_phase", "TEXT")
+            _add_column(conn, "photos", "phase_score", "REAL")
+            _add_column(conn, "photos", "phase_confirmed", "INTEGER NOT NULL DEFAULT 0")
+
         # Индексы создаём после колонок; IF NOT EXISTS делает шаг идемпотентным.
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_verdicts_at ON verdicts (building_id, at)")
         # Дедупликация снимков по хешу содержимого — двумя индексами, а не одним.
@@ -285,6 +358,7 @@ class Database:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_photos_hash_nocam ON photos (building_id, content_hash) "
                      "WHERE content_hash IS NOT NULL AND camera_id IS NULL")
         conn.execute("CREATE INDEX IF NOT EXISTS ix_photos_status ON photos (building_id, detect_status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_photos_phase ON photos (building_id, phase, taken_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS ix_deviations_open ON deviations (building_id, kind) "
                      "WHERE resolved_at IS NULL")
 

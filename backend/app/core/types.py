@@ -24,6 +24,8 @@ class PhotoObs:
     camera_name: str = ""
     zone: str = ""
     detections: list[Detection] = field(default_factory=list)
+    phase: str | None = None                   # этап, к которому относится снимок (авто или вручную)
+    phase_source: str | None = None            # auto | manual
 
 
 def iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:

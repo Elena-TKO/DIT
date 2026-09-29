@@ -11,6 +11,7 @@ const props = defineProps({
   building: { type: Object, required: true },
   classes: { type: Array, default: () => [] },
   equipment: { type: Array, default: () => [] },
+  phases: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['changed'])
 
@@ -22,13 +23,14 @@ const files = ref([])
 const cameraId = ref('')
 const startAt = ref(toLocalInput())
 const interval = ref(30)
+const uploadPhase = ref('')      // '' — этап определяется по технике на каждом снимке
 const timeMode = ref('series')   // 'single' — все снимки одним моментом, 'series' — с интервалом
 const progress = ref(null)
 const errors = ref([])
 const error = ref('')
 const openId = ref(null)
 const dragging = ref(false)
-const filters = ref({ camera_id: '', cls: '', taken_from: '', taken_to: '' })
+const filters = ref({ camera_id: '', cls: '', phase: '', taken_from: '', taken_to: '' })
 const compare = ref([])
 const fileInput = ref(null)
 
@@ -79,7 +81,7 @@ async function upload() {
     for (let i = 0; i < list.length; i += batch) {
       const chunkStart = new Date(base.getTime() + i * step * 60000)
       const res = await api.uploadPhotos(props.building.id, list.slice(i, i + batch), {
-        camera_id: cameraId.value, start_at: toLocalInput(chunkStart), interval_min: step,
+        camera_id: cameraId.value, start_at: toLocalInput(chunkStart), interval_min: step, phase: uploadPhase.value,
       })
       errors.value.push(...res.errors)
       progress.value = { done: Math.min(list.length, i + batch), total: list.length }
@@ -116,8 +118,8 @@ onMounted(() => {
     <form class="panel" @submit.prevent="upload">
       <div class="panel-head">
         <div>
-          <h2>Загрузка снимков</h2>
-          <p class="muted small">У снимков нет времени съёмки: первый получает указанный момент, каждый следующий — плюс интервал, в порядке выбора.</p>
+          <h2>Снимки объекта: загрузка</h2>
+          <p class="muted small">Сразу после загрузки на каждом снимке распознаётся техника и определяется примерный этап работ — он появится на плане и в таблице «Все работы».</p>
         </div>
       </div>
       <div class="upload">
@@ -135,6 +137,11 @@ onMounted(() => {
             <select v-model="cameraId">
               <option value="">Без камеры</option>
               <option v-for="c in uploadCameras" :key="c.id" :value="String(c.id)">{{ c.name }}{{ c.zone ? `, ${c.zone}` : '' }}</option>
+            </select></label>
+          <label class="field">Этап работ
+            <select v-model="uploadPhase">
+              <option value="">Определить по технике</option>
+              <option v-for="p in phases" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select></label>
           <label class="field">{{ timeMode === 'series' ? 'Время первого снимка' : 'Время съёмки' }}
             <input v-model="startAt" type="datetime-local" required /></label>
@@ -164,8 +171,10 @@ onMounted(() => {
       <ul v-if="errors.length" class="error small"><li v-for="(e, i) in errors" :key="i">{{ e.file }}: {{ e.error }}</li></ul>
     </form>
 
-    <CameraPanel :project-id="building.project_id" :building-id="building.id"
-      :buildings="[building]" @changed="onCamerasChanged" />
+    <div id="cameras" class="cameras-anchor">
+      <CameraPanel :project-id="building.project_id" :building-id="building.id"
+        :buildings="[building]" @changed="onCamerasChanged" />
+    </div>
 
     <section class="panel">
       <div class="panel-head">
@@ -184,11 +193,17 @@ onMounted(() => {
               <option value="">любая</option>
               <option v-for="e in equipment" :key="e.cls" :value="e.cls">{{ e.label }}</option>
             </select></label>
+          <label class="field">Этап
+            <select v-model="filters.phase" @change="loadPhotos()">
+              <option value="">любой</option>
+              <option v-for="p in phases" :key="p.id" :value="p.id">{{ p.name }}</option>
+              <option value="none">не определён</option>
+            </select></label>
           <label class="field">С<input v-model="filters.taken_from" type="date" @change="loadPhotos()" /></label>
           <label class="field">По<input v-model="filters.taken_to" type="date" @change="loadPhotos()" /></label>
         </div>
       </div>
-      <div v-if="!photos.length" class="empty"><p>Снимков пока нет. Загрузите фото или запустите эмулятор камеры.</p></div>
+      <div v-if="!photos.length" class="empty"><p>Снимков пока нет. Загрузите фото с камер площадки.</p></div>
       <ul v-else class="gallery">
         <li v-for="p in photos" :key="p.id">
           <button type="button" class="shot" :class="{ picked: compare.includes(p.id) }" @click="openId = p.id">
@@ -202,6 +217,11 @@ onMounted(() => {
             </span>
             <span class="shot-meta">
               <span class="faint small">{{ p.camera_name || 'без камеры' }}</span>
+              <span v-if="p.phase" class="stage-tag" :class="{ manual: p.phase_source === 'manual' }"
+                :title="p.phase_source === 'manual' ? 'Загружен на этап' : p.phase_confirmed ? 'Этап определён по технике' : 'Примерный этап по технике'">
+                {{ p.phase_source === 'auto' && !p.phase_confirmed ? '≈ ' : '' }}{{ p.phase_name }}
+              </span>
+              <span v-else class="faint small">этап не определён</span>
               <span class="eq">
                 <span v-for="e in p.equipment" :key="e.cls" class="tag">{{ e.label }}<template v-if="e.count > 1"> ×{{ e.count }}</template></span>
                 <span v-if="!p.equipment.length" class="faint small">техника не найдена</span>
@@ -257,6 +277,9 @@ onMounted(() => {
 .shot-time { position: absolute; left: 12px; bottom: 12px; padding: 4px 11px; border-radius: 999px; background: rgba(10, 14, 16, 0.55); border: 1px solid rgba(236, 235, 230, 0.12); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--ink); font-size: 12px; }
 .shot-meta { display: grid; gap: 8px; padding: 12px 2px 0; }
 .eq { display: flex; flex-wrap: wrap; gap: 6px; }
+.stage-tag { justify-self: start; font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); text-decoration: none; }
+.stage-tag.manual { background: var(--accent); color: var(--accent-ink); }
+.cameras-anchor { scroll-margin-top: 24px; }
 .more { display: flex; justify-content: center; margin-top: 24px; }
 @media (max-width: 900px) { .upload { grid-template-columns: 1fr; } }
 </style>

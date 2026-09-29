@@ -17,6 +17,7 @@ let lastFocused = null
 const error = ref('')
 const busy = ref(false)
 const showWeak = ref(false)
+const phases = ref([])
 
 const shown = computed(() => (photo.value?.detections || [])
   .filter((d) => showWeak.value || d.confidence >= photo.value.min_confidence))
@@ -77,6 +78,7 @@ function onKey(e) {
 
 watch(() => props.photoId, load)
 onMounted(async () => {
+  api.methodology().then((m) => { phases.value = m.phases || [] }).catch(() => {})
   lastFocused = document.activeElement
   document.body.style.overflow = 'hidden'
   window.addEventListener('keydown', onKey)
@@ -121,6 +123,13 @@ onBeforeUnmount(() => {
           <h3>Этап по этому снимку</h3>
           <p class="small">{{ photo.stage.explanation }}</p>
           <p class="faint small">По графику на эту дату: {{ photo.planned_phases.map((p) => p.name).join(', ') || 'нет работ' }}</p>
+          <label class="phase-pick small">Этап снимка
+            <select :value="photo.phase_source === 'manual' ? photo.phase : ''" :disabled="busy"
+              @change="run(() => api.updatePhoto(photo.id, { phase: $event.target.value }))">
+              <option value="">Авто: {{ photo.auto_phase_name || 'не определён' }}</option>
+              <option v-for="ph in phases" :key="ph.id" :value="ph.id">{{ ph.name }}</option>
+            </select>
+          </label>
         </section>
         <section>
           <div class="section-head">
@@ -151,6 +160,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.phase-pick { display: grid; gap: 4px; margin-top: 10px; color: var(--ink-3); }
+.phase-pick select { font: inherit; font-size: 13px; padding: 6px 8px; }
 .lightbox { display: grid; grid-template-columns: minmax(0, 1fr) 380px; width: min(1440px, 100%); max-height: calc(100vh - 48px); border-radius: var(--r-xl); overflow: hidden; background: #070A0B; border: 1px solid var(--hair); box-shadow: var(--shadow); }
 .stage { display: flex; flex-direction: column; min-width: 0; padding: 20px 24px 24px; }
 .stage-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 16px; }

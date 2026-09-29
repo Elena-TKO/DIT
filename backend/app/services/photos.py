@@ -16,7 +16,8 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from app.core.activity import assign_activity
-from app.core.stage import detect_stage, observe
+from app.core.norms import quantity_fit, requirements
+from app.core.stage import detect_stage, observe, photo_stage
 from app.core.types import Detection, PhotoObs
 from app.core.verdict import planned_phases_at
 from .common import (AppContext, ServiceError, now, iso, parse_dt, require_building, require_camera, require_photo)
@@ -127,10 +128,79 @@ def ingest_photo(ctx: AppContext, building: dict, camera: dict | None, original_
     return photo_id
 
 
+# ------------------------------------------------------------------ этап снимка
+def check_phase(ctx: AppContext, phase: str | None) -> str | None:
+    phase = (phase or "").strip() or None
+    if phase and phase not in ctx.m.phases:
+        raise ServiceError(422, f"Неизвестный этап работ: {phase}")
+    return phase
+
+
+def _photo_counts(ctx: AppContext, photo_id: int) -> dict[str, int]:
+    rows = ctx.db.all("SELECT cls, COUNT(*) AS n FROM detections WHERE photo_id = ? AND confidence >= ? GROUP BY cls",
+                      (photo_id, ctx.m.detection["min_confidence"]))
+    return {r["cls"]: r["n"] for r in rows if r["cls"] in ctx.m.equipment}
+
+
+def assign_photo_phase(ctx: AppContext, photo_id: int, building: dict | None = None,
+                       tasks: list[dict] | None = None) -> None:
+    """Примерный этап работ по технике на снимке (виды + количество), сразу после распознавания.
+
+    Этап, выбранный пользователем при загрузке (``phase_source = manual``), не перезаписывается —
+    автоопределение сохраняется рядом в ``auto_phase`` для сверки.
+    """
+    photo = ctx.db.one("SELECT id, building_id, taken_at, phase_source FROM photos WHERE id = ?", (photo_id,))
+    if not photo:
+        return
+    building = building or ctx.db.one("SELECT * FROM buildings WHERE id = ?", (photo["building_id"],))
+    tasks = tasks if tasks is not None else active_leaf_tasks(ctx, photo["building_id"])
+    planned = set(planned_phases_at(tasks, dt.date.fromisoformat(photo["taken_at"][:10])))
+    object_type = building["object_type"]
+
+    def fit(phase: str, counts: dict[str, int]) -> float:
+        return quantity_fit(counts, requirements(ctx.m, ctx.norms, object_type, phase))
+
+    phase, score, confirmed = photo_stage(_photo_counts(ctx, photo_id), ctx.m, planned, fit)
+    if photo["phase_source"] == "manual":
+        ctx.db.execute("UPDATE photos SET auto_phase = ?, phase_score = ?, phase_confirmed = ? WHERE id = ?",
+                       (phase, score, int(confirmed), photo_id))
+    else:
+        ctx.db.execute("UPDATE photos SET phase = ?, phase_source = 'auto', auto_phase = ?, phase_score = ?, "
+                       "phase_confirmed = ? WHERE id = ?", (phase, phase, score, int(confirmed), photo_id))
+
+
+def ensure_photo_phases(ctx: AppContext, building_id: int) -> None:
+    """Досчитывает этап у снимков, загруженных до появления этой функции (phase_source IS NULL)."""
+    missing = ctx.db.all("SELECT id FROM photos WHERE building_id = ? AND phase_source IS NULL", (building_id,))
+    if not missing:
+        return
+    building = ctx.db.one("SELECT * FROM buildings WHERE id = ?", (building_id,))
+    tasks = active_leaf_tasks(ctx, building_id)
+    for r in missing:
+        assign_photo_phase(ctx, r["id"], building, tasks)
+
+
+def set_photo_phase(ctx: AppContext, user_id: int, photo_id: int, phase: str | None) -> dict:
+    """Ручная привязка снимка к этапу; пустое значение — вернуть автоопределение."""
+    photo = require_photo(ctx, user_id, photo_id)
+    phase = check_phase(ctx, phase)
+    if phase:
+        ctx.db.execute("UPDATE photos SET phase = ?, phase_source = 'manual' WHERE id = ?", (phase, photo_id))
+    else:
+        ctx.db.execute("UPDATE photos SET phase_source = NULL WHERE id = ?", (photo_id,))
+        assign_photo_phase(ctx, photo_id)
+    return photo_detail(ctx, user_id, photo["id"])
+
+
 def upload_photos(ctx: AppContext, user_id: int, building_id: int, files: list[tuple[str, bytes]],
-                  camera_id: int | None = None, start_at: str | None = None, interval_min: int = 30) -> dict:
-    """Пакетная загрузка. Реальных дат у снимков нет — время задаётся от ``start_at`` с шагом ``interval_min``."""
+                  camera_id: int | None = None, start_at: str | None = None, interval_min: int = 30,
+                  phase: str | None = None) -> dict:
+    """Пакетная загрузка. Реальных дат у снимков нет — время задаётся от ``start_at`` с шагом ``interval_min``.
+
+    ``phase`` — загрузка на конкретный этап работ (из плана); без него этап определяется по технике.
+    """
     building = require_building(ctx, user_id, building_id)
+    phase = check_phase(ctx, phase)
     if not files:
         raise ServiceError(422, "Выберите хотя бы один снимок")
     if len(files) > 200:
@@ -145,11 +215,17 @@ def upload_photos(ctx: AppContext, user_id: int, building_id: int, files: list[t
     base = parse_dt(start_at, now())
 
     ids, errors = [], []
+    tasks = active_leaf_tasks(ctx, building_id)
     for i, (name, data) in enumerate(files):
         try:
-            ids.append(ingest_photo(ctx, building, camera, name, data, base + dt.timedelta(minutes=interval_min * i)))
+            pid = ingest_photo(ctx, building, camera, name, data, base + dt.timedelta(minutes=interval_min * i))
         except ServiceError as exc:
             errors.append({"file": name, "error": exc.detail})
+            continue
+        if phase:
+            ctx.db.execute("UPDATE photos SET phase = ?, phase_source = 'manual' WHERE id = ?", (phase, pid))
+        assign_photo_phase(ctx, pid, building, tasks)
+        ids.append(pid)
     if ids:
         recompute_activity(ctx, building_id, camera["id"] if camera else None, since=base)
     return {"uploaded": len(ids), "photo_ids": ids, "errors": errors,
@@ -158,7 +234,8 @@ def upload_photos(ctx: AppContext, user_id: int, building_id: int, files: list[t
 
 def load_obs(ctx: AppContext, building_id: int, since: dt.datetime | None = None,
              until: dt.datetime | None = None, camera_id: int | None | str = "any") -> list[PhotoObs]:
-    sql = ("SELECT ph.id, ph.taken_at, ph.camera_id, c.name AS camera_name, c.zone FROM photos ph "
+    sql = ("SELECT ph.id, ph.taken_at, ph.camera_id, ph.phase, ph.phase_source, c.name AS camera_name, c.zone "
+           "FROM photos ph "
            "LEFT JOIN cameras c ON c.id = ph.camera_id WHERE ph.building_id = ?")
     params: list = [building_id]
     if since:
@@ -176,7 +253,8 @@ def load_obs(ctx: AppContext, building_id: int, since: dt.datetime | None = None
         return []
     by_id = {r["id"]: PhotoObs(id=r["id"], taken_at=dt.datetime.fromisoformat(r["taken_at"]),
                                camera_id=r["camera_id"], camera_name=r["camera_name"] or "",
-                               zone=r["zone"] or "") for r in rows}
+                               zone=r["zone"] or "", phase=r["phase"], phase_source=r["phase_source"])
+             for r in rows}
     placeholders = ",".join("?" * len(by_id))
     for d in ctx.db.all(f"SELECT * FROM detections WHERE photo_id IN ({placeholders}) ORDER BY id", list(by_id)):
         by_id[d["photo_id"]].detections.append(Detection(
@@ -210,16 +288,31 @@ def photo_summary(ctx: AppContext, photo_id: int) -> dict:
     for d in dets:
         if d["confidence"] >= min_conf:
             counts[d["cls"]] = counts.get(d["cls"], 0) + 1
-    return {**p, "detections_count": sum(counts.values()),
+    return {**p, **phase_names(ctx, p), "detections_count": sum(counts.values()),
             "equipment": [{"cls": c, "label": ctx.m.label(c), "count": n} for c, n in counts.items()]}
+
+
+def phase_names(ctx: AppContext, p: dict) -> dict:
+    name = lambda ph: ctx.m.phase(ph).name if ph in ctx.m.phases else None   # noqa: E731
+    return {"phase_name": name(p.get("phase")), "auto_phase_name": name(p.get("auto_phase")),
+            "phase_confirmed": bool(p.get("phase_confirmed"))}
 
 
 def list_photos(ctx: AppContext, user_id: int, building_id: int, limit: int = 200, offset: int = 0,
                 camera_id: int | None = None, taken_from: str | None = None, taken_to: str | None = None,
-                cls: str | None = None) -> dict:
-    """Список снимков страницей: два запроса на страницу, без обращения к БД на каждый снимок."""
+                cls: str | None = None, phase: str | None = None) -> dict:
+    """Список снимков страницей: два запроса на страницу, без обращения к БД на каждый снимок.
+
+    ``phase`` — только снимки этапа; ``phase="none"`` — снимки, этап которых не определён.
+    """
     require_building(ctx, user_id, building_id)
+    ensure_photo_phases(ctx, building_id)
     where, params = "ph.building_id = ?", [building_id]
+    if phase == "none":
+        where += " AND ph.phase IS NULL"
+    elif phase:
+        where += " AND ph.phase = ?"
+        params.append(check_phase(ctx, phase))
     if camera_id:
         where += " AND ph.camera_id = ?"
         params.append(camera_id)
@@ -240,7 +333,7 @@ def list_photos(ctx: AppContext, user_id: int, building_id: int, limit: int = 20
         f"SELECT ph.*, c.name AS camera_name, c.zone FROM photos ph LEFT JOIN cameras c ON c.id = ph.camera_id "
         f"WHERE {where} ORDER BY ph.taken_at DESC, ph.id DESC LIMIT ? OFFSET ?",
         params + [max(1, min(limit, 1000)), max(0, offset)])
-    items = {r["id"]: {**r, "detections_count": 0, "equipment": []} for r in rows}
+    items = {r["id"]: {**r, **phase_names(ctx, r), "detections_count": 0, "equipment": []} for r in rows}
     if items:
         placeholders = ",".join("?" * len(items))
         counts: dict[int, dict[str, int]] = {i: {} for i in items}
@@ -293,6 +386,7 @@ def replace_detections(ctx: AppContext, user_id: int, photo_id: int, items: list
         conn.executemany("INSERT INTO detections (photo_id, cls, label_raw, confidence, x1, y1, x2, y2, manual) "
                          "VALUES (?,?,?,?,?,?,?,?,?)", rows)
     recompute_activity(ctx, photo["building_id"], photo["camera_id"], dt.datetime.fromisoformat(photo["taken_at"]))
+    assign_photo_phase(ctx, photo_id)
     return photo_detail(ctx, user_id, photo_id)
 
 
@@ -308,6 +402,7 @@ def redetect(ctx: AppContext, user_id: int, photo_id: int) -> dict:
             [(photo_id, d.cls, d.label_raw, d.confidence, *d.bbox) for d in detections])
         conn.execute("UPDATE photos SET detector = ? WHERE id = ?", (ctx.detector.name, photo_id))
     recompute_activity(ctx, photo["building_id"], photo["camera_id"], dt.datetime.fromisoformat(photo["taken_at"]))
+    assign_photo_phase(ctx, photo_id)
     return photo_detail(ctx, user_id, photo_id)
 
 

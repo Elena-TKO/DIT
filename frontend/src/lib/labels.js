@@ -31,13 +31,6 @@ export const RISK = {
   high: 'Высокий риск задержки',
 }
 
-export const SOURCE_TYPES = [
-  { key: 'upload', label: 'Ручная загрузка снимков' },
-  { key: 'emulator', label: 'Эмулятор камеры (лента кадров)' },
-  { key: 'http', label: 'IP-камера: адрес снимка (HTTP)' },
-  { key: 'rtsp', label: 'IP-камера: видеопоток (RTSP)' },
-]
-
 // Цвета рамок техники: различимы между собой и на фоне грунта/снега
 const PALETTE = ['#E9C46A', '#7FB2F0', '#F08A7A', '#8CD3A3', '#C3A6F2', '#F2A65A', '#6FD1CC', '#F28DB2',
   '#A7D8F0', '#C9E58C', '#E0B3F5', '#F5DE8C', '#79C99A', '#B8BEC2']

@@ -11,6 +11,8 @@ import threading
 from app.config import Settings
 from app.core.catalog import load_catalog
 from app.core.methodology import load_methodology
+from app.core.norms import load_norms
+from app.core.reference import seed_reference
 from app.db import Database
 from app.ml.detectors import create_detector
 
@@ -28,6 +30,9 @@ class AppContext:
         self.db = Database(settings.db_path)
         self.m = load_methodology()
         self.catalog = load_catalog()
+        self.norms = load_norms()
+        with self.db.connect() as conn:
+            seed_reference(conn, self.m, self.catalog, self.norms)
         self._detector = detector
         self._init_lock = threading.Lock()
         self.detect_lock = threading.Lock()   # модели YOLO не гарантируют потокобезопасность

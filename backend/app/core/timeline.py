@@ -36,7 +36,13 @@ def photo_evidence(photos: list[PhotoObs], tasks: list[dict], m: Methodology) ->
             out.append((p, []))
             continue
         planned = set(planned_phases_at(tasks, p.taken_at.date()))
-        out.append((p, resolve_phases(rank_phases(present, m), present, planned, m)))
+        phases = resolve_phases(rank_phases(present, m), present, planned, m)
+        # снимок, загруженный пользователем на конкретный этап, подтверждает его,
+        # если на кадре есть хотя бы часть техники этого этапа
+        if (p.phase_source == "manual" and p.phase in m.phases and p.phase not in phases
+                and present & m.phase(p.phase).expected_classes):
+            phases = [*phases, p.phase]
+        out.append((p, phases))
     return out
 
 

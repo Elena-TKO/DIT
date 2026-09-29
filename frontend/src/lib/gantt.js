@@ -47,3 +47,31 @@ export function bar(scale, start, end) {
   const x2 = Math.min(scale.width, scale.x(end))
   return { x: x1, w: Math.max(2, x2 - x1) }
 }
+
+/** Доля ширины шкалы (0..1) → дата 'YYYY-MM-DD'. Для линии под курсором на таймлайне. */
+export function dateAt(start, end, fraction) {
+  const s = parseDate(start).getTime()
+  const e = Math.max(parseDate(end).getTime(), s + DAY)
+  const f = Math.min(1, Math.max(0, fraction))
+  const d = new Date(s + (e - s) * f)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** Положение даты или интервала на шкале в процентах (для адаптивной вёрстки без пикселей). */
+export function pct(start, end, from, to = null) {
+  const s = parseDate(start).getTime()
+  const e = Math.max(parseDate(end).getTime(), s + DAY)
+  const at = (v) => ((parseDate(v).getTime() - s) / (e - s)) * 100
+  const left = Math.min(100, Math.max(0, at(from)))
+  if (to === null) return { left }
+  // факт по снимкам включает последний день целиком
+  const right = Math.min(100, Math.max(0, at(to) + (DAY / (e - s)) * 100))
+  return { left, width: Math.max(0.4, right - left) }
+}
+
+/** Попадает ли дата в диапазон шкалы. */
+export function inRange(start, end, date) {
+  const t = parseDate(date)?.getTime()
+  return t !== undefined && t >= parseDate(start).getTime() && t <= parseDate(end).getTime()
+}

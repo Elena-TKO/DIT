@@ -19,6 +19,22 @@ export function setSession(data) {
 /** Состояние навигации: хлебные крошки, текущая стройка/объект, счётчик для обновления боковой панели. */
 export const ui = reactive({ crumbs: [], projectId: null, buildingId: null, navVersion: 0 })
 
+/** Дизайн интерфейса: 'light' — новый светлый, 'classic' — тёмный, как до редизайна. Хранится в браузере. */
+export const DESIGNS = [
+  { key: 'light', label: 'Новый' },
+  { key: 'classic', label: 'Классический' },
+]
+const savedDesign = (() => {
+  try { return localStorage.getItem('sk-design') } catch { return null }
+})()
+ui.design = DESIGNS.some((d) => d.key === savedDesign) ? savedDesign : 'light'
+
+export function setDesign(key) {
+  if (!DESIGNS.some((d) => d.key === key)) return
+  ui.design = key
+  try { localStorage.setItem('sk-design', key) } catch { /* приватный режим — только до перезагрузки */ }
+}
+
 export function refreshNav() {
   ui.navVersion += 1
 }

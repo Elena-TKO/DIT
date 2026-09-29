@@ -18,6 +18,11 @@ class FileResponse(Response):
         self.path = path
 
 
+class StreamingResponse(Response):
+    def __init__(self, content=None, media_type=None, headers=None, **kw):
+        super().__init__(content, 200, media_type, headers)
+
+
 class PlainTextResponse(Response):
     def __init__(self, content=None, media_type=None, headers=None, **kw):
         super().__init__(content, 200, media_type, headers)

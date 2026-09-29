@@ -112,7 +112,7 @@ watch(() => props.id, load)
           <p>Добавьте объект — дом, школу или участок дороги.</p>
           <button class="btn primary" type="button" @click="showForm = true"><Icon name="plus" />Добавить объект</button>
         </div>
-        <RouterLink v-for="b in overview.buildings" :key="b.id" :to="`/buildings/${b.id}/analysis`" class="object">
+        <RouterLink v-for="b in overview.buildings" :key="b.id" :to="`/buildings/${b.id}/photos`" class="object">
           <div class="cover" :class="{ empty: !b.cover_photo_id }">
             <img v-if="b.cover_photo_id" :src="imageUrl(b.cover_photo_id, 480)" alt="" loading="lazy" />
           </div>

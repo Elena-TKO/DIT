@@ -29,6 +29,8 @@ class ProjectPatch(BaseModel):
     address: str | None = None
     start_date: str | None = None
     end_date: str | None = None
+    lat: float | None = None      # точка на карте, поставленная вручную
+    lon: float | None = None
 
 
 class BuildingIn(BaseModel):
@@ -67,6 +69,20 @@ class DetectionIn(BaseModel):
 
 class DetectionsIn(BaseModel):
     items: list[DetectionIn] = Field(default_factory=list)
+
+
+class PhotoPatch(BaseModel):
+    phase: str | None = None        # этап работ; пустая строка — вернуть автоопределение по технике
+
+
+class CalcIn(BaseModel):
+    kind: str                       # excavation | concreting | tower_crane
+    params: dict = Field(default_factory=dict)
+
+
+class AssistantIn(BaseModel):
+    question: str
+    project_id: int | None = None   # стройка, по которой отвечать (для вопроса о текущем этапе)
 
 
 class CameraIn(BaseModel):

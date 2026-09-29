@@ -51,3 +51,17 @@ test('статусы таймлайна имеют цвета тёмной те�
   assert.equal(timelineColor('unknown', '#123456'), '#123456')
   assert.notEqual(timelineColor('delayed'), timelineColor('at_risk'))
 })
+
+import { dateAt, pct, inRange } from '../src/lib/gantt.js'
+
+test('таймлайн: дата под курсором и проценты полос', () => {
+  assert.equal(dateAt('2025-01-01', '2025-01-11', 0), '2025-01-01')
+  assert.equal(dateAt('2025-01-01', '2025-01-11', 0.5), '2025-01-06')
+  assert.equal(dateAt('2025-01-01', '2025-01-11', 5), '2025-01-11')          // за краем — край
+  assert.deepEqual(pct('2025-01-01', '2025-01-11', '2025-01-06'), { left: 50 })
+  const b = pct('2025-01-01', '2025-01-11', '2025-01-01', '2025-01-01')     // факт в один день — не нулевая полоса
+  assert.equal(b.left, 0)
+  assert.ok(b.width >= 10)
+  assert.ok(inRange('2025-01-01', '2025-12-31', '2025-06-01'))
+  assert.ok(!inRange('2025-01-01', '2025-12-31', '2026-06-01'))
+})

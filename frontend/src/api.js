@@ -67,6 +67,8 @@ export const api = {
   updateProject: (id, data) => request('PATCH', `/projects/${id}`, { json: data }),
   deleteProject: (id) => request('DELETE', `/projects/${id}`),
   overview: (id) => request('GET', `/projects/${id}/overview`),
+  geocodeProject: (id, force = false) => request('POST', `/projects/${id}/geocode`, { query: { force: force || undefined } }),
+  placeProject: (id, lat, lon) => request('PATCH', `/projects/${id}`, { json: { lat, lon } }),
 
   createBuilding: (projectId, data) => request('POST', `/projects/${projectId}/buildings`, { json: data }),
   building: (id) => request('GET', `/buildings/${id}`),
@@ -84,9 +86,15 @@ export const api = {
   uploadPhotos: (buildingId, files, fields) =>
     request('POST', `/buildings/${buildingId}/photos`, { form: filesForm(files, fields) }),
   photo: (id) => request('GET', `/photos/${id}`),
+  updatePhoto: (id, data) => request('PATCH', `/photos/${id}`, { json: data }),
   replaceDetections: (id, items) => request('PUT', `/photos/${id}/detections`, { json: { items } }),
   redetect: (id) => request('POST', `/photos/${id}/redetect`),
   deletePhoto: (id) => request('DELETE', `/photos/${id}`),
+
+  stages: (buildingId) => request('GET', `/buildings/${buildingId}/stages`),
+  stage: (buildingId, phase) => request('GET', `/buildings/${buildingId}/stages/${encodeURIComponent(phase)}`),
+  methodologyNorms: (objectType) => request('GET', '/methodology/norms', { query: { object_type: objectType } }),
+  methodologyCalc: (kind, params) => request('POST', '/methodology/calc', { json: { kind, params } }),
 
   analysis: (buildingId, at) => request('GET', `/buildings/${buildingId}/analysis`, { query: { at } }),
   runAnalysis: (buildingId, at) => request('POST', `/buildings/${buildingId}/analysis`, { query: { at } }),
@@ -99,9 +107,64 @@ export const api = {
   createCamera: (projectId, data) => request('POST', `/projects/${projectId}/cameras`, { json: data }),
   updateCamera: (id, data) => request('PATCH', `/cameras/${id}`, { json: data }),
   deleteCamera: (id) => request('DELETE', `/cameras/${id}`),
-  pollCamera: (id) => request('POST', `/cameras/${id}/poll`),
-  uploadFrames: (id, files) => request('POST', `/cameras/${id}/frames`, { form: filesForm(files) }),
-  resetEmulator: (id, data) => request('POST', `/cameras/${id}/reset`, { json: data }),
+
+  assistantDocuments: () => request('GET', '/assistant/documents'),
+  addAssistantDocument: (file) => {
+    const form = new FormData()
+    form.append('file', file, file.name)
+    return request('POST', '/assistant/documents', { form })
+  },
+  deleteAssistantDocument: (id) => request('DELETE', `/assistant/documents/${id}`),
+}
+
+/**
+ * Вопрос помощнику с потоковым ответом (NDJSON: meta → delta… → done).
+ * onMeta({ intent, sources, project }) вызывается один раз, onDelta(text) — на каждый фрагмент.
+ */
+export async function askAssistant(question, { projectId = null, signal, onMeta, onDelta } = {}) {
+  const headers = { 'Content-Type': 'application/json' }
+  if (session.token) headers.Authorization = `Bearer ${session.token}`
+  let res
+  try {
+    res = await fetch('/api/assistant/chat', {
+      method: 'POST', headers, signal, body: JSON.stringify({ question, project_id: projectId || null }),
+    })
+  } catch (e) {
+    if (e.name === 'AbortError') throw e
+    throw new ApiError(0, 'Сервер недоступен. Проверьте, что бэкенд запущен.')
+  }
+  if (res.status === 401 && session.token) {
+    setSession(null)
+    window.location.assign('/login')
+  }
+  if (!res.ok) {
+    let message = `Ошибка ${res.status}`
+    try {
+      const data = await res.json()
+      if (typeof data.detail === 'string') message = data.detail
+    } catch { /* ответ не JSON */ }
+    throw new ApiError(res.status, message)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  const handle = (line) => {
+    if (!line.trim()) return
+    const event = JSON.parse(line)
+    if (event.type === 'meta') onMeta?.(event)
+    else if (event.type === 'delta') onDelta?.(event.text)
+  }
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      handle(buffer.slice(0, nl))
+      buffer = buffer.slice(nl + 1)
+    }
+  }
+  handle(buffer + decoder.decode())
 }
 
 export function imageUrl(photoId, width) {

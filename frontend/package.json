@@ -11,6 +11,7 @@
     "check": "node tests/check-sfc.mjs"
   },
   "dependencies": {
+    "leaflet": "^1.9.4",
     "vue": "^3.4.21",
     "vue-router": "^4.3.0"
   },

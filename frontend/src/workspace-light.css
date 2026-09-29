@@ -1,4 +1,4 @@
-﻿.shell.projects-light { --night:#f4f7fa; --panel:#fff; --panel-2:#f7f9fc; --panel-3:#eaf0f5; --ok:#2f9e67; --ok-soft:#eaf6ef; --warning:#7c5cfc; --warning-soft:#f0ebff; --critical:#c34242; --critical-soft:#fff0ef; --accent-soft:#edf2ff; --shadow:0 18px 48px #2436590c; }
+.shell.projects-light { --night:#f4f7fa; --panel:#fff; --panel-2:#f7f9fc; --panel-3:#eaf0f5; --ok:#2f9e67; --ok-soft:#eaf6ef; --warning:#7c5cfc; --warning-soft:#f0ebff; --critical:#c34242; --critical-soft:#fff0ef; --accent-soft:#edf2ff; --shadow:0 18px 48px #2436590c; }
 .projects-light input:focus,.projects-light select:focus,.projects-light textarea:focus { background:white; border-color:#4073f4; }
 .projects-light .panel { background:#fff; border-color:#e7ecf1; }
 .projects-light .building-nav { display:grid; gap:16px; padding:18px 0 10px 12px; }

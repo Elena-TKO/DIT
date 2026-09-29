@@ -188,3 +188,29 @@ def detect_stage(present: set[str], m: Methodology, planned: set[str] | None = N
                  + ", ".join(f"«{m.phase(p).name}»" for p in ambiguous)
                  + (" — выбран этап по графику." if top.phase in planned else "."))
     return StageResult(top.phase, top.name, top.name, top.score, resolved, ambiguous, ranking, text)
+
+
+def photo_stage(counts: dict[str, int], m: Methodology, planned: set[str] | None = None,
+                fit=None) -> tuple[str | None, float, bool]:
+    """Примерный этап по одному снимку: (этап, балл, подтверждён ли набором обязательной техники).
+
+    Учитываются виды техники (методика) и её количество (``fit(phase, counts)`` — соответствие нормам
+    количества этапа, см. ``norms.quantity_fit``). Порядок выбора среди подходящих этапов:
+    этап по графику → лучшее соответствие количеству → балл по видам техники.
+    Если ни один этап не подтверждён полностью, возвращается ближайший (``confirmed = False``).
+    """
+    planned = planned or set()
+    present = {c for c, n in counts.items() if n > 0}
+    if not present:
+        return None, 0.0, False
+    res = detect_stage(present, m, planned)
+    scores = {s.phase: s for s in res.ranking}
+    candidates = list(dict.fromkeys([*res.resolved, *res.ambiguous_with]))
+    if candidates:
+        best = max(candidates, key=lambda p: (p in planned, fit(p, counts) if fit else 0.0, scores[p].score))
+        return best, scores[best].score, True
+    partial = [s for s in res.ranking if s.score > 0 and s.required_coverage > 0]
+    if not partial:
+        return None, 0.0, False
+    best = max(partial, key=lambda s: (s.phase in planned, fit(s.phase, counts) if fit else 0.0, s.score))
+    return best.phase, best.score, False

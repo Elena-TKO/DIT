@@ -77,3 +77,12 @@ class EvalDetectorTest(unittest.TestCase):
         preds = [("excavator", (0, 0, 0.2, 0.2), 0.9), ("excavator", (0.5, 0.5, 0.6, 0.6), 0.8)]
         gts = [("excavator", (0, 0, 0.2, 0.2)), ("dump_truck", (0.5, 0.5, 0.6, 0.6))]
         self.assertEqual(eval_detector.match(preds, gts, 0.5), (1, 1, 1))
+
+
+class MethodologyDocTest(unittest.TestCase):
+    def test_methodology_md_matches_code(self):
+        """Приложения METHODOLOGY.md сгенерированы из текущих norms.json / methodology.json."""
+        import export_norms
+        current = export_norms.DOC.read_text(encoding="utf-8")
+        self.assertEqual(export_norms.render(current), current,
+                         "METHODOLOGY.md устарел: python scripts/export_norms.py")
